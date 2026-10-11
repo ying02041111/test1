@@ -4,7 +4,8 @@
 
 /* ---------- 開場精靈 ---------- */
 function resetToSetup(){
-  const b = $('boot'); b.classList.remove('off');
+  const b = $('boot'); if (!b) return;
+  b.classList.remove('off');
   b.innerHTML = '<div style="width:88%;max-width:420px">'
   + '<h2 style="color:#e08aa3;letter-spacing:.1em;text-align:center;margin:0 0 4px">緋夜飼育錄</h2>'
   + '<p style="color:#9b8fa6;font-size:12px;text-align:center;margin-bottom:18px">飼育員登記表</p>'
@@ -15,27 +16,40 @@ function resetToSetup(){
   + '<p style="font-size:11.5px;color:#9b8fa6;line-height:1.7">起始資金 ₡4,800，目前住在舊港區的廉租單間（週租 ₡350）。'
   + '領養第一隻魅魔之後，飼育生活就開始了。</p>'
   + '<button class="btn" id="b-start" style="width:100%;margin-top:8px">前往官方領養所</button></div>';
+
   b.querySelectorAll('#b-gender button').forEach(x=>x.onclick=()=>{
     b.querySelectorAll('#b-gender button').forEach(y=>y.classList.remove('on')); x.classList.add('on');
   });
-  $('b-start').onclick = async ()=>{
-    const gender = b.querySelector('#b-gender button.on').dataset.g;
-    const title = $('b-title').value.trim() || '主人';
-    const nm = $('b-name').value.trim() || title;
-    newGame({ name:nm, gender, title });
-    b.classList.add('off');
-    refreshMarket();
-    render();
-    toast('已建立存檔，帶你去官方領養所');
-    showTab('market');
-    await openingScene();
-  };
+
+  const startBtn = $('b-start');
+  if (startBtn) {
+    startBtn.onclick = async ()=>{
+      try {
+        const genderBtn = b.querySelector('#b-gender button.on');
+        const gender = genderBtn ? genderBtn.dataset.g : '女性';
+        const title = $('b-title').value.trim() || '主人';
+        const nm = $('b-name').value.trim() || title;
+        newGame({ name:nm, gender, title });
+        b.classList.add('off');
+        refreshMarket();
+        render();
+        toast('已建立存檔，帶你去官方領養所');
+        showTab('market');
+        await openingScene();
+      } catch (err) {
+        alert('啟動出錯：' + err.message);
+      }
+    };
+  }
 }
 
 async function openingScene(){
-  if (!S.ai.apiKey){
-    S.log.push({ d:1, p:'清晨', text:'你在官方領養所門口停下。玻璃窗後坐著幾隻等待登記的魅魔，她們抬起頭看你。（尚未設定 API Key，先以系統敘述代替。請到「設定」填入 API Key，之後的劇情就會由 AI 生成。）', chosen:'前往領養所', choices:['走進大廳','先在窗外看一會'] });
-    save(); render(); return;
+  if (!S || !S.ai || !S.ai.apiKey){
+    if(S && S.log){
+      S.log.push({ d:1, p:'清晨', text:'你在官方領養所門口停下。玻璃窗後坐著幾隻等待登記的魅魔，她們抬起頭看你。（尚未設定 API Key，先以系統敘述代替。請到「設定」填入 API Key，之後的劇情就會由 AI 生成。）', chosen:'前往領養所', choices:['走進大廳','先在窗外看一會'] });
+      save();
+    }
+    render(); return;
   }
   setBusy(true, 'AI 正在鋪陳開場…');
   try{
@@ -44,15 +58,13 @@ async function openingScene(){
   setBusy(false); render();
 }
 
-/* ---------- 進度鎖 ---------- */
 function setBusy(on, msg){
   busy = on;
   const ch = $('home-choices');
-  if (on) ch.innerHTML = '<button disabled><span class="loading"></span>' + (msg||'AI 正在書寫…') + '</button>';
+  if (on && ch) ch.innerHTML = '<button disabled><span class="loading"></span>' + (msg||'AI 正在書寫…') + '</button>';
   else render();
 }
 
-/* ---------- 推進 ---------- */
 async function choose(c){
   if (busy) return;
   if (!S.ai.apiKey){ toast('請先到設定填入 API Key'); return; }
@@ -64,7 +76,6 @@ async function choose(c){
   setBusy(false); render();
 }
 
-/* ---------- 餵食 ---------- */
 function actFeed(sid, fid){
   const s = S.succubi.find(x=>x.id===sid); if (!s || !(S.food[fid]>0)) return;
   S.food[fid]--; if (!S.food[fid]) delete S.food[fid];
@@ -74,7 +85,7 @@ function actFeed(sid, fid){
   toast(s.name + '：' + log);
   save(); render();
 }
-/* ---------- 道具 ---------- */
+
 function actItem(sid, iid){
   const s = S.succubi.find(x=>x.id===sid); if (!s || !(S.bag[iid]>0)) return;
   const it = ITEMS[iid];
@@ -88,7 +99,7 @@ function actItem(sid, iid){
     chosen:'使用' + it.name, choices:['繼續','收手','換一個'] });
   save(); render();
 }
-/* ---------- 訓練 ---------- */
+
 function actTrain(sid, tid){
   const s = S.succubi.find(x=>x.id===sid), T = TRAININGS.find(t=>t.id===tid);
   if (!s || !T) return;
@@ -102,7 +113,7 @@ function actTrain(sid, tid){
   toast(s.name + ' 訓練完成：' + log);
   save(); render();
 }
-/* ---------- 自留 / 契約 ---------- */
+
 function actKept(sid){
   const s = S.succubi.find(x=>x.id===sid); if (!s) return;
   S.succubi.forEach(x=> x.kept=false);
@@ -111,6 +122,7 @@ function actKept(sid){
   toast(s.name + ' 成為你的自留魅魔');
   save(); render();
 }
+
 function actPermanent(sid){
   const s = S.succubi.find(x=>x.id===sid); if (!s) return;
   if (s.rel < 60){ toast('關係需達 60（目前 ' + s.rel + '）'); return; }
@@ -119,19 +131,21 @@ function actPermanent(sid){
   toast(s.name + ' 簽下永久契約');
   save(); render();
 }
-/* ---------- 購買 ---------- */
+
 function actBuyItem(k){
   const p = effectivePrice(ITEMS[k].price);
   if (S.money < p) return;
   S.money -= p; S.bag[k] = (S.bag[k]||0)+1;
   toast('購入 ' + ITEMS[k].name + '（-' + fmt(p) + '）'); save(); render();
 }
+
 function actBuyFood(k){
   const p = foodPrice(k);
   if (S.money < p) return;
   S.money -= p; S.food[k] = (S.food[k]||0)+1;
   toast('購入 ' + FOODS[k].name + '（-' + fmt(p) + '）'); save(); render();
 }
+
 async function actBuySuccubus(race, src, price){
   price = parseInt(price);
   if (S.money < price) { toast('資金不足'); return; }
@@ -156,7 +170,7 @@ async function actBuySuccubus(race, src, price){
   } else { toast(s.name + ' 已成為你的魅魔'); }
   render();
 }
-/* ---------- 販售 ---------- */
+
 async function actSell(sid, ch){
   const s = S.succubi.find(x=>x.id===sid); if (!s) return;
   if (ch==='official'){
@@ -195,7 +209,7 @@ async function actSell(sid, ch){
     $('no-blk').onclick = ()=>{ applyEff(s, {mood:-5, obedience:-2}, 1); closeModal(); save(); render(); toast('你把 ' + s.name + ' 帶回家'); };
   }
 }
-/* ---------- 每週拍賣：多買家競價 ---------- */
+
 async function actAuction(sid){
   const s = S.succubi.find(x=>x.id===sid); if (!s) return;
   const base = blackFloor(s);
@@ -207,10 +221,10 @@ async function actAuction(sid){
     bidders.push({ n:b.n, d:b.d, p: Math.round(base*mul) });
   }
   bidders.sort((a,b)=>b.p-a.p);
-  modal('<h3>今晚的拍賣台</h3><p>' + s.name + ' 被帶上台。檯燈很亮，她的 ' + (RACES[s.race].look[0]) + ' 在光下無所遁形。</p>'
+  modal('<h3>今晚的拍賣台</h3><p>' + s.name + ' 被帶上台。</p>'
     + bidders.map((b,i)=>'<div class="card"><h4>' + b.n + ' <span class="tag g">' + fmt(b.p) + '</span></h4><p>' + b.d + '</p>'
       + '<button class="btn tiny" data-take="' + i + '">賣給他</button></div>').join('')
-    + '<button class="btn ghost" id="au-none" style="margin-top:8px">全部拒絕，帶回家</button>');
+    + '<button class="btn ghost" id="au-none" style="margin-top:8px">帶回家</button>');
   document.querySelectorAll('[data-take]').forEach(btn=> btn.onclick = ()=>{
     const b = bidders[parseInt(btn.dataset.take)];
     S.money += b.p;
@@ -221,7 +235,7 @@ async function actAuction(sid){
   });
   $('au-none').onclick = ()=>{ applyEff(s,{mood:-6,obedience:-3},1); closeModal(); save(); render(); toast(s.name + ' 跟你回家了'); };
 }
-/* ---------- 搬家 / 前往 ---------- */
+
 function actMove(hid){
   const h = HOUSES.find(x=>x.id===hid); if (!h) return;
   const cost = h.type==='rent' ? h.rent*2 : h.price;
@@ -233,14 +247,15 @@ function actMove(hid){
   toast('已搬到 ' + h.name + '（-' + fmt(cost) + '）');
   save(); render();
 }
+
 function actGoto(did){
   S.district = did;
   toast('你移動到 ' + dist().name);
   refreshMarket(); save(); render();
 }
 
-/* ---------- 市場刷新（純程式） ---------- */
 function refreshMarket(){
+  if(!S) return;
   const pool = Object.keys(RACES);
   const mk = src => {
     const out = [];
@@ -259,35 +274,7 @@ function refreshMarket(){
 }
 
 function checkSellReminder(){
-  if (S.money < dailyUpkeep()*3) toast('資金偏低，注意日結算');
-}
-
-/* ---------- 啟動 ---------- */
-function start(){
-  $('tabbar').addEventListener('click', e=>{
-    const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab);
-  });
-  $('modal').addEventListener('click', e=>{ if (e.target.id==='modal') closeModal(); });
-  $('btn-compress').onclick = async ()=>{
-    if (!S.ai.apiKey){ toast('請先設定 API Key'); return; }
-    toast('壓縮中…'); await compressStory(); render();
-  };
-  $('free-send').onclick = ()=>{
-    const v = $('free-input').value.trim(); if (!v) return;
-    $('free-input').value = ''; choose('（自由描述）' + v);
-  };
-  $('home-choices').addEventListener('click', e=>{
-    const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.choice) return choose(b.dataset.choice);
-    if (b.dataset.act==='sleep') return doSleep();
-    if (b.dataset.act==='restart') return resetToSetup();
-  });
-  setInterval(()=>{ if (S) save(); }, 20000);
-
-  const sv = load();
-  if (sv){ S = sv; S.settings.appName = S.settings.appName || '緋夜飼育錄'; refreshMarket&&0; render(); showTab('home'); }
-  else resetToSetup();
-  render();
+  if (S && S.money < dailyUpkeep()*3) toast('資金偏低，注意日結算');
 }
 
 function doSleep(){
@@ -297,7 +284,7 @@ function doSleep(){
   save();
   if (S.flags.gameOver){
     render();
-    modal('<h3>破產</h3><p>結算後資金見底。住所的燈被切了，魅魔們站在門邊看著你。<br><br>這一輪飼育到此結束。</p>'
+    modal('<h3>破產</h3><p>結算後資金見底。這一輪飼育到此結束。</p>'
       + '<button class="btn" onclick="closeModal()">知道了</button>');
     return;
   }
@@ -306,4 +293,54 @@ function doSleep(){
   toast('第 ' + S.day + ' 天開始（' + PHASES[0] + '）');
 }
 
+function start(){
+  const tabbar = $('tabbar');
+  if (tabbar) {
+    tabbar.addEventListener('click', e=>{
+      const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab);
+    });
+  }
+  const modalEl = $('modal');
+  if (modalEl) {
+    modalEl.addEventListener('click', e=>{ if (e.target.id==='modal') closeModal(); });
+  }
+  const btnComp = $('btn-compress');
+  if (btnComp) {
+    btnComp.onclick = async ()=>{
+      if (!S.ai.apiKey){ toast('請先設定 API Key'); return; }
+      toast('壓縮中…'); await compressStory(); render();
+    };
+  }
+  const freeSend = $('free-send');
+  if (freeSend) {
+    freeSend.onclick = ()=>{
+      const v = $('free-input').value.trim(); if (!v) return;
+      $('free-input').value = ''; choose('（自由描述）' + v);
+    };
+  }
+  const homeChoices = $('home-choices');
+  if (homeChoices) {
+    homeChoices.addEventListener('click', e=>{
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.choice) return choose(b.dataset.choice);
+      if (b.dataset.act==='sleep') return doSleep();
+      if (b.dataset.act==='restart') return resetToSetup();
+    });
+  }
+  setInterval(()=>{ if (S) save(); }, 20000);
+
+  const sv = load();
+  if (sv){
+    S = sv;
+    if(!S.settings) S.settings = {};
+    S.settings.appName = S.settings.appName || '緋夜飼育錄';
+    refreshMarket();
+    render();
+    showTab('home');
+  } else {
+    resetToSetup();
+  }
+}
+
 document.addEventListener('DOMContentLoaded', start);
+

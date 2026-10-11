@@ -1,0 +1,9 @@
+{
+  "appId": "com.yourname.crimsonnight",
+  "appName": "緋夜飼育錄",
+  "webDir": "www",
+  "server": { "androidScheme": "https" },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}

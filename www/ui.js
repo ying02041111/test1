@@ -32,7 +32,6 @@ function render(){
 /* ---------- 主頁 ---------- */
 function renderHome(){
   const st = $('home-status');
-  const hb = houseBonus();
   st.innerHTML = [
     card('資金', fmt(S.money), S.money < dailyUpkeep()*2 ? 'w':'g', '日結 -' + fmt(dailyUpkeep())),
     card('主控體力', S.stamina + '/' + maxStamina(), S.stamina<20?'w':'r', '每日回復 30'),
@@ -95,21 +94,27 @@ function succubusDetail(s){
   const f = FOODS[R.food];
   const bagFoods = Object.keys(S.food).filter(k=>S.food[k]>0);
   const bagItems = Object.keys(S.bag).filter(k=>S.bag[k]>0 && (ITEMS[k].kind==='mild' || S.settings.harshItems));
+  
+  const baseRows = [
+    ['種族', R.name], ['主食', f.name + '（' + fmt(foodPrice(R.food)) + '）'],
+    ['等級 / 經驗', s.level + ' / ' + s.exp + '/' + expNeed(s.level)],
+    ['魅惑值', s.charm], ['服從值', s.obedience],
+    ['體力', s.stamina + ' / ' + s.staminaMax],
+    ['飽食度', s.fullness], ['心情', s.mood],
+    ['每日生活費', fmt(succubusUpkeep(s))],
+    ['官方估價', fmt(officialOffer(s))], ['黑市起標', fmt(blackFloor(s))]
+  ];
+  if (s.kept) {
+    baseRows.push(['關係', s.rel], ['契約', s.contract==='permanent'?'永久':'臨時']);
+  }
+
   return '<button class="btn ghost tiny" data-back="1">‹ 返回列表</button>'
     + '<div class="card" style="margin-top:10px"><h4>' + esc(s.name) + '</h4>'
     + '<div class="tags"><span class="tag r">' + R.name + '</span><span class="tag">' + s.persona + '</span>'
     + '<span class="tag">Lv.' + s.level + '</span><span class="tag">' + (s.contract==='permanent'?'永久契約':'臨時契約') + '</span>'
     + (s.kept?'<span class="tag g">自留</span>':'') + (s.defect?'<span class="tag">缺陷：'+s.defect+'</span>':'') + '</div>'
     + '<div class="look">' + esc(s.look) + '</div>'
-    + rows([
-      ['種族', R.name], ['主食', f.name + '（' + fmt(foodPrice(R.food)) + '）'],
-      ['等級 / 經驗', s.level + ' / ' + s.exp + '/' + expNeed(s.level)],
-      ['魅惑值', s.charm], ['服從值', s.obedience],
-      ['體力', s.stamina + ' / ' + s.staminaMax],
-      ['飽食度', s.fullness], ['心情', s.mood],
-      ['每日生活費', fmt(succubusUpkeep(s))],
-      ['官方估價', fmt(officialOffer(s))], ['黑市起標', fmt(blackFloor(s))],
-    ] + (s.kept? [['關係', s.rel], ['契約', s.contract==='permanent'?'永久':'臨時']] : []))
+    + rows(baseRows)
     + '<p style="font-size:12px;color:#9b8fa6">' + esc(R.desc) + '</p></div>'
 
     + '<div class="card"><h4>餵食</h4><p>主食會吃得乾淨；其他食物只算墊肚子。<br>庫存：'
@@ -230,7 +235,7 @@ function renderHouse(){
     + (nb.sell?'<span class="tag">售價 +' + Math.round(nb.sell*100) + '%</span>':'') + '</div></div>';
   $('house-list').innerHTML = HOUSES.filter(h=>h.id!==(S.housing&&S.housing.id)).map(h=>{
     const here = h.districts.indexOf(S.district) >= 0;
-    const cost = h.type==='rent' ? h.rent*2 : h.price;   // 首週 + 一週押金
+    const cost = h.type==='rent' ? h.rent*2 : h.price;
     return '<div class="card"><h4>' + h.name + ' <span class="tag' + (h.type==='buy'?' g':'') + '">' + (h.type==='rent'?'出租':'出售') + '</span></h4>'
       + '<p>' + esc(h.desc) + '</p>'
       + '<div class="tags"><span class="tag">上限 ' + h.cap + ' 隻</span>'
@@ -270,71 +275,4 @@ function renderSettings(){
   + f('模型名稱', 'in-model', a.model)
   + '<div class="field"><label>Temperature ' + a.temp + '</label><input id="in-temp" type="range" min="0.3" max="1.3" step="0.1" value="' + a.temp + '"></div>'
   + f('每次回覆上限 tokens', 'in-maxtok', a.maxTokens, 'number')
-  + '<button class="btn tiny" data-save-ai="1">儲存連線設定</button> '
-  + '<button class="btn tiny ghost" data-test-ai="1">測試連線</button></div>'
-
-  + '<div class="card"><h4>寫作與內容</h4>'
-  + '<div class="field"><label>語言</label><div class="seg" id="seg-lang">'
-  + [['hant','繁體中文'],['hans','簡體中文']].map(x=>'<button data-lang="' + x[0] + '" class="' + (st.lang===x[0]?'on':'') + '">' + x[1] + '</button>').join('') + '</div></div>'
-  + '<div class="field"><label>氛圍強度</label><div class="seg" id="seg-tone">'
-  + [['1','含蓄'],['2','成熟（暗示）'],['3','濃烈（極限暗示）']].map(x=>'<button data-tone="' + x[0] + '" class="' + (String(st.tone)===x[0]?'on':'') + '">' + x[1] + '</button>').join('') + '</div></div>'
-  + '<div class="field"><label>殘酷道具（刑具類，僅敘述感受）</label><div class="seg" id="seg-harsh">'
-  + [['1','開啟'],['0','關閉']].map(x=>'<button data-harsh="' + x[0] + '" class="' + (String(st.harshItems?1:0)===x[0]?'on':'') + '">' + x[1] + '</button>').join('') + '</div></div>'
-  + '<button class="btn tiny" data-save-write="1">儲存</button></div>'
-
-  + '<div class="card"><h4>節省 token</h4>'
-  + f('保留最近幾段原文', 'in-keep', st.keepRecent, 'number')
-  + f('超過幾個 tokens 提醒壓縮', 'in-acthresh', st.autoCompressTokens, 'number')
-  + '<p>壓縮只改寫「前情摘要」，劇情錨點（' + S.facts.length + ' 條）永遠保留，所以劇情不會斷。</p>'
-  + '<button class="btn tiny" data-compress="1">立即壓縮</button></div>'
-
-  + '<div class="card"><h4>存檔</h4><p>目前約 ' + tokenEstimate() + ' tokens。存檔自動寫入本機。</p>'
-  + '<div class="tags"><button class="btn tiny ghost" data-export="1">匯出存檔</button>'
-  + '<button class="btn tiny ghost" data-import="1">匯入存檔</button>'
-  + '<button class="btn tiny bad" data-reset="1">重新開始</button></div></div>'
-
-  + '<div class="card"><h4>關於</h4><p>緋夜飼育錄 v1.0｜所有角色均設定為成年虛構個體。數值由程式結算，AI 僅負責敘事。</p></div>';
-
-  bindSettings();
-}
-function f(label, id, val, type){
-  return '<div class="field"><label>' + label + '</label><input id="' + id + '" type="' + (type||'text') + '" value="'
-    + String(val==null?'':val).replace(/"/g,'&quot;') + '"></div>';
-}
-function bindSettings(){
-  const seg = (id, fn) => {
-    const el = $(id); if (!el) return;
-    el.querySelectorAll('button').forEach(b=> b.onclick = ()=>{ fn(b); renderSettings(); });
-  };
-  seg('seg-provider', b=>{ const k=b.dataset.prov; const P=PROVIDERS[k];
-    S.ai.provider=k; if(P.base){S.ai.baseUrl=P.base; S.ai.model=P.model; S.ai.jsonMode=!!P.json;} save(); });
-  seg('seg-lang', b=>{ S.settings.lang=b.dataset.lang; save(); });
-  seg('seg-tone', b=>{ S.settings.tone=parseInt(b.dataset.tone); save(); });
-  seg('seg-harsh', b=>{ S.settings.harshItems = b.dataset.harsh==='1'; save(); });
-  const t = $('in-temp'); if (t) t.oninput = ()=>{ S.ai.temp = parseFloat(t.value); $('in-temp').previousElementSibling.textContent = 'Temperature ' + t.value; save(); };
-  const bind = (id, fn) => { const el=$(id); if(el) el.onchange = ()=>{ fn(el.value); save(); }; };
-  bind('in-key', v=>S.ai.apiKey=v.trim()); bind('in-base', v=>S.ai.baseUrl=v.trim()); bind('in-model', v=>S.ai.model=v.trim());
-  bind('in-maxtok', v=>S.ai.maxTokens=parseInt(v)||700); bind('in-keep', v=>S.settings.keepRecent=parseInt(v)||3);
-  bind('in-acthresh', v=>S.settings.autoCompressTokens=parseInt(v)||5000);
-  const q = sel => document.querySelector(sel);
-  if (q('[data-save-master]')) q('[data-save-master]').onclick = ()=>{ S.master.title=$('in-set-title').value.trim()||S.master.title; S.master.gender=$('in-set-gender').value.trim()||S.master.gender; save(); toast('已更新'); render(); };
-  if (q('[data-save-ai]')) q('[data-save-ai]').onclick = ()=>{ save(); toast('已儲存'); };
-  if (q('[data-test-ai]')) q('[data-test-ai]').onclick = async ()=>{ try{ const r = await aiChat('只回一個字：好','測試'); toast('連線成功：' + String(r).slice(0,20)); }catch(e){ toast(e.message); } };
-  if (q('[data-save-write]')) q('[data-save-write]').onclick = ()=>{ save(); toast('已儲存'); };
-  if (q('[data-compress]')) q('[data-compress]').onclick = async ()=>{ toast('壓縮中…'); await compressStory(); render(); };
-  if (q('[data-export]')) q('[data-export]').onclick = ()=>{
-    const txt = JSON.stringify(S);
-    navigator.clipboard && navigator.clipboard.writeText(txt);
-    modal('<h3>存檔（已複製到剪貼簿）</h3><textarea style="width:100%;height:200px">' + esc(txt) + '</textarea><button class="btn" onclick="closeModal()">關閉</button>');
-  };
-  if (q('[data-import]')) q('[data-import]').onclick = ()=>{
-    modal('<h3>貼上存檔</h3><textarea id="imp" style="width:100%;height:200px"></textarea>'
-      + '<div class="tags"><button class="btn" id="do-imp">匯入</button><button class="btn ghost" onclick="closeModal()">取消</button></div>');
-    $('do-imp').onclick = ()=>{ try{ const o = JSON.parse($('imp').value); if(!o.succubi) throw 0; S=o; save(); closeModal(); render(); toast('匯入完成'); }catch(e){ toast('格式錯誤'); } };
-  };
-  if (q('[data-reset]')) q('[data-reset]').onclick = ()=>{ if(confirm('確定要刪除存檔並重新開始？')){ if (typeof resetToSetup==='function') resetToSetup(); else { wipe(); location.reload(); } } };
-}
-
-function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function modal(html){ $('modal-box').innerHTML = html; $('modal').classList.remove('hidden'); }
-function closeModal(){ $('modal').classList.add('hidden'); }
+  + '<button

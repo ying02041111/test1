@@ -13,7 +13,8 @@ const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const deep = o => JSON.parse(JSON.stringify(o));
 
 function toast(msg){
-  const t=$('toast'); t.textContent=msg; t.classList.add('on');
+  const t=$('toast'); if(!t) return;
+  t.textContent=msg; t.classList.add('on');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),1900);
 }
 function fmt(n){ return '₡' + Math.round(n).toLocaleString('en-US'); }
@@ -26,7 +27,7 @@ function maxStamina(){ return 100 + Math.floor(S.power/2); }
 function succubusUpkeep(s){ return 20 + s.level*10 + Math.floor(s.charm/10)*6; }
 function dailyUpkeep(){
   let c = Math.round(60 * dist().cost);
-  S.succubi.forEach(s=> c += succubusUpkeep(s));
+  if(S.succubi) S.succubi.forEach(s=> c += succubusUpkeep(s));
   return Math.max(0, Math.round(c * (1 + (houseBonus().upkeep||0))));
 }
 function weeklyRent(){ return S.housing && S.housing.type==='rent' ? S.housing.rent : 0; }
@@ -58,9 +59,10 @@ function rollSuccubus(raceId, opts){
   return s;
 }
 function buildLook(R){
+  const scent = '身上帶著' + pick(['雪松','蜜','鐵','雨後泥土','舊紙','花','鹽']) + '的氣味。';
+  const walk = '走路時' + pick(['幾乎沒聲音','帶著一點急躁','很慢，像在打量地板','尾巴/翅會不自覺晃']) + '。';
   return pick(HAIR) + '的髮、' + pick(EYES) + '色的眼，' + pick(BUILDER) + '的身形。'
-    + pick(R.look) + '。' + pick(['身上帶著' + pick(['雪松','蜜','鐵','雨後泥土','舊紙','花','鹽']) + '的氣味。',
-      '走路時' + pick(['幾乎沒聲音','帶著一點急躁','很慢，像在打量地板','尾巴/翅會不自覺晃'] ) + '。'];
+    + pick(R.look) + '。' + pick([scent, walk]);
 }
 const DEFECTS = [
   { id:'frail', name:'體虛', apply:s=>{ s.staminaMax-=25; s.stamina=s.staminaMax; } },
@@ -150,3 +152,4 @@ function load(){
   }catch(e){ return null; }
 }
 function wipe(){ localStorage.removeItem(SAVE_KEY); }
+

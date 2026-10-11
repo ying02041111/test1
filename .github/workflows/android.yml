@@ -16,24 +16,32 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
-      - name: Prepare Web Assets & Capacitor
+      - name: Prepare Web Assets
         run: |
           mkdir -p www
+          if [ ! -f "www/index.html" ]; then
+            echo '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><h1>Crimson Night Record</h1></body></html>' > www/index.html
+          fi
+
+      - name: Add Android Platform
+        run: |
           if [ ! -d "android" ]; then
             npx cap add android
           fi
-          npx cap sync android
+
+      - name: Sync Capacitor
+        run: npx cap sync android
 
       - name: Build APK
         run: |
@@ -41,8 +49,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
+      - name: Check APK Location
+        run: |
+          echo "=== 尋找生成的 APK 檔案 ==="
+          find android/ -name "*.apk"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: crimson-night-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+

@@ -337,10 +337,12 @@ function start(){
     refreshMarket();
     render();
     showTab('home');
+    // 【核心修復】讀取存檔成功後，強制關閉載入中遮罩
+    const bootEl = $('boot');
+    if (bootEl) bootEl.classList.add('off');
   } else {
     resetToSetup();
   }
 }
 
 document.addEventListener('DOMContentLoaded', start);
-

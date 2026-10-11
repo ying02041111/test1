@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#120d17">
+<title>緋夜飼育錄</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="topbar">
+  <div class="tb-l"><b id="tb-title">緋夜飼育錄</b><span id="tb-when">第1天 · 清晨</span></div>
+  <div class="tb-r">
+    <span class="chip m" id="tb-money">₡0</span>
+    <span class="chip" id="tb-stam">體0</span>
+    <span class="chip" id="tb-power">權0</span>
+  </div>
+</div>
+
+<main id="pages">
+  <section class="page" id="page-home">
+    <div id="home-status" class="grid2"></div>
+    <div id="home-story" class="story"></div>
+    <div id="home-choices" class="choices"></div>
+    <div class="freebox">
+      <input id="free-input" placeholder="或自由描述你的行動…">
+      <button id="free-send" class="btn ghost">送出</button>
+    </div>
+    <div class="toolrow">
+      <button id="btn-compress" class="btn tiny">🗜 壓縮劇情</button>
+      <span id="token-hint" class="tiny-note"></span>
+    </div>
+  </section>
+
+  <section class="page" id="page-succubi">
+    <div id="succubi-list" class="cards"></div>
+  </section>
+
+  <section class="page" id="page-shop">
+    <div id="shop-head"></div>
+    <h3 class="sec">道具</h3><div id="shop-items" class="cards"></div>
+    <h3 class="sec">食物</h3><div id="shop-food" class="cards"></div>
+  </section>
+
+  <section class="page" id="page-market">
+    <h3 class="sec">官方領養所 <span class="tiny-note">平日營業 · 有保障 · 較貴</span></h3>
+    <div id="mk-official" class="cards"></div>
+    <h3 class="sec">黑市 <span class="tiny-note">便宜 · 有風險</span></h3>
+    <div id="mk-black" class="cards"></div>
+    <h3 class="sec">販售</h3>
+    <div id="mk-sell" class="cards"></div>
+    <div id="mk-auction"></div>
+  </section>
+
+  <section class="page" id="page-house">
+    <div id="house-now"></div>
+    <h3 class="sec">可搬遷的住所</h3>
+    <div id="house-list" class="cards"></div>
+  </section>
+
+  <section class="page" id="page-settings">
+    <div id="set-body"></div>
+  </section>
+</main>
+
+<nav id="tabbar">
+  <button data-tab="home" class="on">主頁</button>
+  <button data-tab="succubi">魅魔</button>
+  <button data-tab="shop">商店</button>
+  <button data-tab="market">市場</button>
+  <button data-tab="house">房產</button>
+  <button data-tab="settings">設定</button>
+</nav>
+
+<div id="modal" class="hidden"><div id="modal-box"></div></div>
+<div id="toast"></div>
+<div id="boot"></div>
+
+<script src="data.js"></script>
+<script src="core.js"></script>
+<script src="ai.js"></script>
+<script src="ui.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

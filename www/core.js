@@ -17,28 +17,74 @@ function toast(msg){
   t.textContent=msg; t.classList.add('on');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),1900);
 }
-function fmt(n){ return '₡' + Math.round(n).toLocaleString('en-US'); }
+function fmt(n){ return '₡' + Math.round(n||0).toLocaleString('en-US'); }
+
+/* ---------- 建立新遊戲狀態 ---------- */
+function newGame(masterInfo){
+  masterInfo = masterInfo || {};
+  S = {
+    day: 1,
+    phase: 0,
+    money: 4800,
+    stamina: 100,
+    power: 10,
+    district: 'harbor',
+    housing: deep(HOUSES[0]),
+    master: {
+      name: masterInfo.name || '主人',
+      title: masterInfo.title || '主人',
+      gender: masterInfo.gender || '女性'
+    },
+    succubi: [],
+    food: { shadowdew: 2 },
+    bag: { nectar: 1 },
+    market: { official: [], black: [] },
+    facts: ['第1天：開始經營飼育所'],
+    summary: '',
+    log: [],
+    flags: { gameOver: false, blackBought: 0 },
+    settings: {
+      appName: '緋夜飼育錄',
+      lang: 'hant',
+      tone: 2,
+      harshItems: false,
+      keepRecent: 3,
+      autoCompressTokens: 5000
+    },
+    ai: {
+      provider: 'gemini',
+      apiKey: '',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      model: 'gemini-flash-latest',
+      temp: 0.8,
+      maxTokens: 700,
+      jsonMode: true
+    }
+  };
+  save();
+}
 
 /* ---------- 派生數值 ---------- */
-function dist(){ return DISTRICTS.find(d=>d.id===S.district) || DISTRICTS[0]; }
-function houseBonus(){ return (S.housing && S.housing.bonus) || {}; }
-function capacity(){ return S.housing ? S.housing.cap : 1; }
-function maxStamina(){ return 100 + Math.floor(S.power/2); }
+function dist(){ return DISTRICTS.find(d=>d.id===(S&&S.district)) || DISTRICTS[0]; }
+function houseBonus(){ return (S && S.housing && S.housing.bonus) || {}; }
+function capacity(){ return (S && S.housing) ? S.housing.cap : 1; }
+function maxStamina(){ return 100 + Math.floor((S?S.power:10)/2); }
 function succubusUpkeep(s){ return 20 + s.level*10 + Math.floor(s.charm/10)*6; }
 function dailyUpkeep(){
+  if(!S) return 60;
   let c = Math.round(60 * dist().cost);
   if(S.succubi) S.succubi.forEach(s=> c += succubusUpkeep(s));
   return Math.max(0, Math.round(c * (1 + (houseBonus().upkeep||0))));
 }
-function weeklyRent(){ return S.housing && S.housing.type==='rent' ? S.housing.rent : 0; }
-function daysToRent(){ return 7 - (S.day % 7 === 0 ? 7 : S.day % 7); }
-function isAuctionDay(){ return S.day % 7 === 0; }
+function weeklyRent(){ return (S && S.housing && S.housing.type==='rent') ? S.housing.rent : 0; }
+function daysToRent(){ return 7 - ((S?S.day:1) % 7 === 0 ? 7 : (S?S.day:1) % 7); }
+function isAuctionDay(){ return (S?S.day:1) % 7 === 0; }
 function expNeed(lv){ return 40 + lv*35; }
 function foodOf(raceId){ return FOODS[RACES[raceId].food]; }
 function effectivePrice(base){ return Math.max(1, Math.round(base * dist().cost)); }
 function foodPrice(fid){ return Math.max(1, Math.round(FOODS[fid].price * dist().food)); }
 
-/* ---------- 生成一隻魅魔 ---------- */
+/* ---------- 生成魅魔 ---------- */
 function rollSuccubus(raceId, opts){
   opts = opts || {};
   const R = RACES[raceId], lv = opts.level || rint(1, 1);
@@ -72,7 +118,7 @@ const DEFECTS = [
 ];
 function applyDefect(s,d){ const D=DEFECTS.find(x=>x.id===d); if(D){ if(D.apply) D.apply(s); s.defect=D.name; } }
 
-/* ---------- 經濟動作 ---------- */
+/* ---------- 經濟估價 ---------- */
 function officialOffer(s){
   const R = RACES[s.race];
   const base = R.price * (1 + 0.35*(s.level-1)) * (1 + s.charm/110) * (1 + s.obedience/400);
@@ -92,8 +138,8 @@ function blackBuyPrice(raceId){
   return Math.round(officialBuyPrice(raceId) * rint(48,68) / 100);
 }
 
-/* ---------- 增減 ---------- */
-function addMoney(n){ S.money += Math.round(n); }
+/* ---------- 增減與經驗 ---------- */
+function addMoney(n){ if(S) S.money += Math.round(n); }
 function gainExp(s, n){
   const mult = 1 + (houseBonus().train||0);
   s.exp += Math.round(n * mult);

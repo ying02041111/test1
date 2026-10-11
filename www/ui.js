@@ -275,4 +275,45 @@ function renderSettings(){
   + f('模型名稱', 'in-model', a.model)
   + '<div class="field"><label>Temperature ' + a.temp + '</label><input id="in-temp" type="range" min="0.3" max="1.3" step="0.1" value="' + a.temp + '"></div>'
   + f('每次回覆上限 tokens', 'in-maxtok', a.maxTokens, 'number')
-  + '<button
+  + '<button class="btn tiny" data-save-ai="1">儲存連線設定</button> '
+  + '<button class="btn tiny ghost" data-test-ai="1">測試連線</button></div>'
+
+  + '<div class="card"><h4>寫作與內容</h4>'
+  + '<div class="field"><label>語言</label><div class="seg" id="seg-lang">'
+  + [['hant','繁體中文'],['hans','簡體中文']].map(x=>'<button data-lang="' + x[0] + '" class="' + (st.lang===x[0]?'on':'') + '">' + x[1] + '</button>').join('') + '</div></div>'
+  + '<div class="field"><label>氛圍強度</label><div class="seg" id="seg-tone">'
+  + [['1','含蓄'],['2','成熟（暗示）'],['3','濃烈（極限暗示）']].map(x=>'<button data-tone="' + x[0] + '" class="' + (String(st.tone)===x[0]?'on':'') + '">' + x[1] + '</button>').join('') + '</div></div>'
+  + '<div class="field"><label>殘酷道具（刑具類，僅敘述感受）</label><div class="seg" id="seg-harsh">'
+  + [['1','開啟'],['0','關閉']].map(x=>'<button data-harsh="' + x[0] + '" class="' + (String(st.harshItems?1:0)===x[0]?'on':'') + '">' + x[1] + '</button>').join('') + '</div></div>'
+  + '<button class="btn tiny" data-save-write="1">儲存</button></div>'
+
+  + '<div class="card"><h4>節省 token</h4>'
+  + f('保留最近幾段原文', 'in-keep', st.keepRecent, 'number')
+  + f('超過幾個 tokens 提醒壓縮', 'in-acthresh', st.autoCompressTokens, 'number')
+  + '<p>壓縮只改寫「前情摘要」，劇情錨點（' + S.facts.length + ' 條）永遠保留，所以劇情不會斷。</p>'
+  + '<button class="btn tiny" data-compress="1">立即壓縮</button></div>'
+
+  + '<div class="card"><h4>存檔</h4><p>目前約 ' + tokenEstimate() + ' tokens。存檔自動寫入本機。</p>'
+  + '<div class="tags"><button class="btn tiny ghost" data-export="1">匯出存檔</button>'
+  + '<button class="btn tiny ghost" data-import="1">匯入存檔</button>'
+  + '<button class="btn tiny bad" data-reset="1">重新開始</button></div></div>'
+
+  + '<div class="card"><h4>關於</h4><p>緋夜飼育錄 v1.0｜所有角色均設定為成年虛構個體。數值由程式結算，AI 僅負責敘事。</p></div>';
+
+  bindSettings();
+}
+
+function f(label, id, val, type){
+  return '<div class="field"><label>' + label + '</label><input id="' + id + '" type="' + (type||'text') + '" value="'
+    + String(val==null?'':val).replace(/"/g,'&quot;') + '"></div>';
+}
+
+function bindSettings(){
+  const seg = (id, fn) => {
+    const el = $(id); if (!el) return;
+    el.querySelectorAll('button').forEach(b=> b.onclick = ()=>{ fn(b); renderSettings(); });
+  };
+  seg('seg-provider', b=>{ const k=b.dataset.prov; const P=PROVIDERS[k];
+    S.ai.provider=k; if(P.base){S.ai.baseUrl=P.base; S.ai.model=P.model; S.ai.jsonMode=!!P.json;} save(); });
+  seg('seg-lang', b=>{ S.settings.lang=b.dataset.lang; save(); });
+  seg('seg-tone', b=>{ S.settings

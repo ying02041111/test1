@@ -6,6 +6,18 @@
 <meta name="theme-color" content="#120d17">
 <title>緋夜飼育錄</title>
 <link rel="stylesheet" href="style.css">
+<script>
+// 全域錯誤捕獲：若程式崩潰，顯示錯誤而不是黑畫面
+window.addEventListener('error', function(e) {
+  var b = document.getElementById('boot');
+  if (b) {
+    b.classList.remove('off');
+    b.innerHTML = '<div style="padding:20px;color:#ff6b6b;font-size:14px;word-break:break-all;">'
+      + '<h3>⚠️ 載入發生錯誤</h3><p>' + (e.message || '未知錯誤') + '</p>'
+      + '<p style="color:#aaa;font-size:12px;">' + (e.filename || '') + ' Line:' + (e.lineno || 0) + '</p></div>';
+  }
+});
+</script>
 </head>
 <body>
 <div id="topbar">
@@ -74,7 +86,7 @@
 
 <div id="modal" class="hidden"><div id="modal-box"></div></div>
 <div id="toast"></div>
-<div id="boot"></div>
+<div id="boot"><div style="color:#9b8fa6;margin-top:40vh;text-align:center;">載入中…</div></div>
 
 <script src="data.js"></script>
 <script src="core.js"></script>

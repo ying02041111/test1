@@ -1,44 +1,29 @@
 /* ==========================================================
-   《緋夜飼育錄》世界資料
-   價格、效果、加成全部在這裡，程式即時結算。AI 不碰數字。
+   《緋夜飼育錄》資料庫
    ========================================================== */
 
 const PHASES = ['清晨','上午','午後','傍晚','深夜'];
+const GRADES = ['F','E','D','C','B','A','S'];
 
-/* ---------- 等級：S A B C D E F ---------- */
-const GRADES = ['F','E','D','C','B','A','S'];      // 1級=F … 7級=S
-const GRADE_TITLE = { F:'生疏',E:'入門',D:'熟練',C:'出色',B:'優異',A:'頂尖',S:'傳說' };
-
-/* ---------- 街區：各區物價、食物、商品清單都不同 ---------- */
 const DISTRICTS = [
-  { id:'harbor', name:'舊港區', cost:0.85, food:0.90, hue:'#5b7a8c',
+  { id:'harbor', name:'舊港區', cost:0.85, food:0.90,
     desc:'潮濕、霧重、租金便宜。黑市在這裡呼吸，倉庫深處永遠有別人的故事。',
-    items:['bitternsalt','chain','ironcollar','nectar','silkribbon'],
-    foods:['seajelly','oilnectar','sunberry'] },
-
-  { id:'industrial', name:'工業外環', cost:0.75, food:0.85, hue:'#8a6a5a',
+    items:['bitternsalt','chain','ironcollar','nectar','silkribbon'], foods:['seajelly','oilnectar','sunberry'] },
+  { id:'industrial', name:'工業外環', cost:0.75, food:0.85,
     desc:'鐵鏽與煤灰的味道。房租低到可疑，鄰居大多是懶得問你問題的人。',
-    items:['bitternsalt','chain','ironcollar','coldbrand','nectar'],
-    foods:['oilnectar','emberspice','seajelly'] },
-
-  { id:'greenhouse', name:'溫室花街', cost:0.95, food:0.72, hue:'#7a9c6b',
-    desc:'終年暖霧，玻璃穹頂下什麼都長得肥美。食物便宜到像不用錢，人也溫柔得可疑。',
-    items:['candle','greenmoss','silkribbon','warmoil','softcollar','nectar'],
-    foods:['sunberry','ambercomb','frostsugar'] },
-
-  { id:'central', name:'中央大道', cost:1.20, food:1.10, hue:'#c9a227',
+    items:['bitternsalt','chain','ironcollar','coldbrand','nectar'], foods:['oilnectar','emberspice','seajelly'] },
+  { id:'greenhouse', name:'溫室花街', cost:0.95, food:0.72,
+    desc:'終年暖霧，玻璃穹頂下什麼都長得肥美。食物便宜到像不用錢。',
+    items:['candle','greenmoss','silkribbon','warmoil','softcollar','nectar'], foods:['sunberry','ambercomb','frostsugar'] },
+  { id:'central', name:'中央大道', cost:1.20, food:1.10,
     desc:'燈火通明，什麼都買得到，也什麼都貴。官方機構與診所都在這條街上。',
-    items:['candle','warmoil','bell','softcollar','silence','ironcollar'],
-    foods:['ambercomb','sunberry','frostsugar','oilnectar','shadowdew'] },
-
-  { id:'skyline', name:'雲頂區', cost:1.90, food:1.40, hue:'#8fa6c9',
+    items:['candle','warmoil','bell','softcollar','silence','ironcollar'], foods:['ambercomb','sunberry','frostsugar','oilnectar','shadowdew'] },
+  { id:'skyline', name:'雲頂區', cost:1.90, food:1.40,
     desc:'空氣稀薄、乾淨，看不見底下的污濁。這裡的門牌本身就是一種權力。',
-    items:['bell','silkribbon','warmoil','softcollar','silence','coldbrand'],
-    foods:['shadowdew','frostsugar','emberspice','ambercomb'],
+    items:['bell','silkribbon','warmoil','softcollar','silence','coldbrand'], foods:['shadowdew','frostsugar','emberspice','ambercomb'],
     unlock:{ power:30 } },
 ];
 
-/* ---------- 食物 ---------- */
 const FOODS = {
   shadowdew: { name:'暗影蜜露', price:95, fill:34 },
   ambercomb: { name:'琥珀蜜塊', price:60, fill:30 },
@@ -49,12 +34,11 @@ const FOODS = {
   oilnectar: { name:'能量蜜漿', price:65, fill:29 },
 };
 
-/* ---------- 種族 ---------- */
 const RACES = {
   nightwing:{ name:'夜翼魔裔', price:1500, food:'shadowdew',
     look:['黑藍色的翼膜收在背後，像一件沒收好的斗篷','豎直的瞳孔在暗處會亮一下','鎖骨下有一圈不會發光的暗紋'],
     bias:['高傲','佔有慾強','嘴硬心軟'], mod:{charm:8,obedience:-6,staminaMax:8},
-    desc:'夜行性，體溫偏低。喜歡高處與黑暗，討厭被呼來喚去。' },
+    desc:'夜行性，體溫偏低。喜歡高處與黑暗，討討被呼來喚去。' },
   amberwax:{ name:'蜜蠟蜂娘', price:1200, food:'ambercomb',
     look:['腹部有淡金色環紋，會在緊張時微微收縮','半透明的翅不算能飛，但抖起來很好看','指尖總是黏的，帶著甜味'],
     bias:['愛撒嬌','順從','黏人'], mod:{charm:3,obedience:9,staminaMax:-4},
@@ -85,7 +69,6 @@ const RACES = {
     desc:'稀有。官方幾乎標不到貨，黑市偶爾流出一隻。' },
 };
 
-/* ---------- 道具：溫和 / 殘酷，文案感性版 ---------- */
 const ITEMS = {
   nectar:    { name:'蜜滴糖',   price:90,  kind:'mild',  eff:{fullness:20,mood:6},
     desc:'含住的第一口是甜，第二口會讓人安靜下來。她會假裝不看你，手卻沒放開。' },
@@ -113,7 +96,6 @@ const ITEMS = {
     desc:'不燙，只留一道會慢慢淡去的痕。她會一直記得它在哪。' },
 };
 
-/* ---------- 訓練 ---------- */
 const TRAININGS = [
   { id:'etiquette', name:'教養', cost:14, exp:14, eff:{obedience:2,mood:1}, desc:'規矩、應對、姿態。' },
   { id:'charm',     name:'魅惑', cost:16, exp:12, eff:{charm:2},           desc:'眼神、語調、靠近的時機。' },
@@ -122,7 +104,6 @@ const TRAININGS = [
   { id:'bond',      name:'陪伴', cost:8,  exp:6,  eff:{mood:8,rel:4},      desc:'什麼都不做，只是待著。' },
 ];
 
-/* ---------- 住所：5 街區 × 2~3 間 ---------- */
 const HOUSES = [
   { id:'h1', district:'harbor', name:'廉租單間', type:'rent', rent:350, cap:1, bonus:{},
     desc:'一張床、一扇窗、一道會漏風的門。' },
@@ -158,7 +139,6 @@ const HOUSES = [
     desc:'整層都是你的。落地窗底下是整個城市。' },
 ];
 
-/* ---------- 關係階段（AI 必須照這個寫） ---------- */
 const STAGES = [
   { min:0,  name:'陌生', tip:'她還在觀察你。回應簡短、保持距離，眼神會先移開。' },
   { min:15, name:'好奇', tip:'她開始會多看你一眼，偶爾主動問一句，但還帶著試探。' },
@@ -171,8 +151,6 @@ const STAGES = [
 const NAME_POOL = ['莉緹','薇菈','賽琳','露娜','莓莓','千棘','霜','焰綺','阿碧','繭',
   '玖玖','白音','彌亞','緹亞','諾瓦','卡莉','銀沙','波波','夜羽','莉莉絲','彌莎','莞莞',
   '燼','柚','綾','摩卡','薇爾','珀','蘇','阿黛'];
-const PERSONA_POOL = ['高傲','冷淡','愛撒嬌','好勝','慵懶','好奇','膽小','嘴硬心軟','佔有慾強',
-  '乖巧','毒舌','溫柔','愛哭','精明','悶騷','怕生'];
 const HAIR = ['墨黑','酒紅','霜白','栗棕','淡紫','湖綠','燦金','灰藍','櫻粉'];
 const EYES = ['琥珀','赤紅','碧綠','灰紫','金','漆黑','冰藍','銅金'];
 const BUILDER = ['高瘦','嬌小','勻稱','豐滿','骨感','結實'];

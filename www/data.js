@@ -1,40 +1,55 @@
 /* ==========================================================
-   《緋夜飼育錄》世界資料表
-   價格、效果、加成全部在這裡，程式即時結算。AI 不碰這些數字。
+   《緋夜飼育錄》世界資料
+   價格、效果、加成全部在這裡，程式即時結算。AI 不碰數字。
    ========================================================== */
 
 const PHASES = ['清晨','上午','午後','傍晚','深夜'];
 
+/* ---------- 等級：S A B C D E F ---------- */
+const GRADES = ['F','E','D','C','B','A','S'];      // 1級=F … 7級=S
+const GRADE_TITLE = { F:'生疏',E:'入門',D:'熟練',C:'出色',B:'優異',A:'頂尖',S:'傳說' };
+
+/* ---------- 街區：各區物價、食物、商品清單都不同 ---------- */
 const DISTRICTS = [
-  { id:'harbor',     name:'舊港區',   hue:'#5b7a8c', cost:0.85, rent:0.8, food:0.9,
+  { id:'harbor', name:'舊港區', cost:0.85, food:0.90, hue:'#5b7a8c',
     desc:'潮濕、霧重、租金便宜。黑市在這裡呼吸，倉庫深處永遠有別人的故事。',
-    shops:['item','food','black'] },
-  { id:'greenhouse', name:'溫室花街', hue:'#7a9c6b', cost:0.95, rent:1.0, food:0.75,
-    desc:'終年暖霧，玻璃穹頂下什麼都長得肥美。食物便宜到像不用錢。',
-    shops:['item','food','official'] },
-  { id:'central',    name:'中央大道', hue:'#c9a227', cost:1.2,  rent:1.35, food:1.1,
-    desc:'燈火通明，什麼都買得到，也什麼都貴。官方機構與診所都在這條街上。',
-    shops:['item','food','official','clinic'] },
-  { id:'industrial', name:'工業外環', hue:'#8a6a5a', cost:0.75, rent:0.6, food:0.85,
+    items:['bitternsalt','chain','ironcollar','nectar','silkribbon'],
+    foods:['seajelly','oilnectar','sunberry'] },
+
+  { id:'industrial', name:'工業外環', cost:0.75, food:0.85, hue:'#8a6a5a',
     desc:'鐵鏽與煤灰的味道。房租低到可疑，鄰居大多是懶得問你問題的人。',
-    shops:['item','food','black'] },
-  { id:'skyline',    name:'雲頂區',   hue:'#8fa6c9', cost:1.9,  rent:2.1, food:1.4,
+    items:['bitternsalt','chain','ironcollar','coldbrand','nectar'],
+    foods:['oilnectar','emberspice','seajelly'] },
+
+  { id:'greenhouse', name:'溫室花街', cost:0.95, food:0.72, hue:'#7a9c6b',
+    desc:'終年暖霧，玻璃穹頂下什麼都長得肥美。食物便宜到像不用錢，人也溫柔得可疑。',
+    items:['candle','greenmoss','silkribbon','warmoil','softcollar','nectar'],
+    foods:['sunberry','ambercomb','frostsugar'] },
+
+  { id:'central', name:'中央大道', cost:1.20, food:1.10, hue:'#c9a227',
+    desc:'燈火通明，什麼都買得到，也什麼都貴。官方機構與診所都在這條街上。',
+    items:['candle','warmoil','bell','softcollar','silence','ironcollar'],
+    foods:['ambercomb','sunberry','frostsugar','oilnectar','shadowdew'] },
+
+  { id:'skyline', name:'雲頂區', cost:1.90, food:1.40, hue:'#8fa6c9',
     desc:'空氣稀薄、乾淨，看不見底下的污濁。這裡的門牌本身就是一種權力。',
-    shops:['food','official','clinic','luxury'], unlock:{ power:30 } },
+    items:['bell','silkribbon','warmoil','softcollar','silence','coldbrand'],
+    foods:['shadowdew','frostsugar','emberspice','ambercomb'],
+    unlock:{ power:30 } },
 ];
 
-/* 食物：每個種族主食不同，吃錯會掉心情 */
+/* ---------- 食物 ---------- */
 const FOODS = {
-  shadowdew:{ name:'暗影蜜露',  price:95,  fill:34 },
-  ambercomb:{ name:'琥珀蜜塊',  price:60,  fill:30 },
-  frostsugar:{name:'霜糖冰晶',  price:70,  fill:30 },
-  emberspice:{name:'焰辛肉乾',  price:85,  fill:32 },
-  seajelly: { name:'海月凍',    price:75,  fill:30 },
-  sunberry: { name:'日光樹果',  price:45,  fill:28 },
-  oilnectar:{ name:'能量蜜漿',  price:65,  fill:29 },
+  shadowdew: { name:'暗影蜜露', price:95, fill:34 },
+  ambercomb: { name:'琥珀蜜塊', price:60, fill:30 },
+  frostsugar:{ name:'霜糖冰晶', price:70, fill:30 },
+  emberspice:{ name:'焰辛肉乾', price:85, fill:32 },
+  seajelly:  { name:'海月凍',   price:75, fill:30 },
+  sunberry:  { name:'日光樹果', price:45, fill:28 },
+  oilnectar: { name:'能量蜜漿', price:65, fill:29 },
 };
 
-/* 種族：外型片段、主食、個性傾向、體質修正、基礎身價 */
+/* ---------- 種族 ---------- */
 const RACES = {
   nightwing:{ name:'夜翼魔裔', price:1500, food:'shadowdew',
     look:['黑藍色的翼膜收在背後，像一件沒收好的斗篷','豎直的瞳孔在暗處會亮一下','鎖骨下有一圈不會發光的暗紋'],
@@ -70,42 +85,87 @@ const RACES = {
     desc:'稀有。官方幾乎標不到貨，黑市偶爾流出一隻。' },
 };
 
-/* 道具：溫和 = 情趣用品；殘酷 = 刑具（僅敘述感受，不做虐待描寫） */
+/* ---------- 道具：溫和 / 殘酷，文案感性版 ---------- */
 const ITEMS = {
-  nectar:    { name:'蜜滴糖',   price:90,  kind:'mild',  eff:{fullness:20,mood:6},  desc:'含進嘴裡就不鬧了。' },
-  candle:    { name:'暖香蠟燭', price:120, kind:'mild',  eff:{mood:12,obedience:2}, desc:'氣味會讓房間變得很像「家」。' },
-  silkribbon:{ name:'絲綢緞帶', price:180, kind:'mild',  eff:{obedience:6,mood:4,charm:2}, desc:'綁手腕或綁頭髮都行。' },
-  warmoil:   { name:'溫熱精油', price:200, kind:'mild',  eff:{stamina:14,mood:8},   desc:'推開之後，緊繃的地方會鬆掉。' },
-  bell:      { name:'低語鈴鐺', price:240, kind:'mild',  eff:{obedience:8,charm:3,mood:-3}, desc:'走到哪響到哪，藏不住位置。' },
-  softcollar:{ name:'軟絨項圈', price:320, kind:'mild',  eff:{obedience:11,mood:5,charm:2}, desc:'內裡墊得很軟，戴久也不會磨。' },
-  ironcollar:{ name:'冷鐵頸扣', price:300, kind:'harsh', eff:{obedience:18,mood:-12,stamina:-5},  desc:'金屬會留住體溫，很久才暖。' },
-  chain:     { name:'束縛鎖鏈', price:450, kind:'harsh', eff:{obedience:25,mood:-20,charm:5},   desc:'重量本身就是一句話。' },
-  silence:   { name:'緘口環',   price:380, kind:'harsh', eff:{obedience:20,mood:-15},             desc:'安靜下來的理由。' },
-  bitternsalt:{name:'苦鹽水',   price:150, kind:'harsh', eff:{obedience:10,mood:-8,fullness:10}, desc:'不會傷身，只是難喝。' },
-  coldbrand: { name:'低溫烙印', price:700, kind:'harsh', eff:{obedience:30,mood:-25,charm:10,stamina:-8}, desc:'不燙，只留一道會慢慢淡去的痕。' },
+  nectar:    { name:'蜜滴糖',   price:90,  kind:'mild',  eff:{fullness:20,mood:6},
+    desc:'含住的第一口是甜，第二口會讓人安靜下來。她會假裝不看你，手卻沒放開。' },
+  candle:    { name:'暖香蠟燭', price:120, kind:'mild',  eff:{mood:12,obedience:2},
+    desc:'火苗很小，氣味卻能把一間冷屋子變成有人等你的地方。' },
+  silkribbon:{ name:'絲綢緞帶', price:180, kind:'mild',  eff:{obedience:6,mood:4,charm:2},
+    desc:'綁上去那一刻，誰握著另一端就很清楚了。她會記住那個重量。' },
+  warmoil:   { name:'溫熱精油', price:200, kind:'mild',  eff:{stamina:14,mood:8},
+    desc:'推開的過程比結果漫長。她從緊繃到鬆手，中間會有很多次呼吸。' },
+  bell:      { name:'低語鈴鐺', price:240, kind:'mild',  eff:{obedience:8,charm:3,mood:-3},
+    desc:'聲音不大，卻藏不住位置。她走到哪，你就知道她在哪。' },
+  softcollar:{ name:'軟絨項圈', price:320, kind:'mild',  eff:{obedience:11,mood:5,charm:2},
+    desc:'內裡墊得很軟。她戴著它睡著的那晚，你把燈留了一整夜。' },
+  greenmoss: { name:'苔癬香膏', price:160, kind:'mild',  eff:{mood:9,stamina:6,obedience:2},
+    desc:'抹在腕上，氣味像下雨之後的森林。她會不自覺靠過來聞。' },
+  ironcollar:{ name:'冷鐵頸扣', price:300, kind:'harsh', eff:{obedience:18,mood:-12,stamina:-5},
+    desc:'金屬要先吃掉她的體溫才會變暖。那之前，她只能忍。' },
+  chain:     { name:'束縛鎖鏈', price:450, kind:'harsh', eff:{obedience:25,mood:-20,charm:5},
+    desc:'重的不只是鏈子，是她終於知道自己走不遠了。' },
+  silence:   { name:'緘口環',   price:380, kind:'harsh', eff:{obedience:20,mood:-15},
+    desc:'安靜下來的理由很多，這一個最不需要解釋。' },
+  bitternsalt:{name:'苦鹽水',   price:150, kind:'harsh', eff:{obedience:10,mood:-8,fullness:10},
+    desc:'不會傷人，只是難喝。她會皺著眉喝完，然後瞪你一眼。' },
+  coldbrand: { name:'低溫烙印', price:700, kind:'harsh', eff:{obedience:30,mood:-25,charm:10,stamina:-8},
+    desc:'不燙，只留一道會慢慢淡去的痕。她會一直記得它在哪。' },
 };
 
-/* 訓練：程式結算成長 */
+/* ---------- 訓練 ---------- */
 const TRAININGS = [
-  { id:'etiquette', name:'教養',   cost:14, exp:14, eff:{obedience:2,mood:1},        desc:'規矩、應對、姿態。' },
-  { id:'charm',     name:'魅惑',   cost:16, exp:12, eff:{charm:2},                  desc:'眼神、語調、靠近的時機。' },
-  { id:'stamina',   name:'體能',   cost:16, exp:12, eff:{staminaMax:3},             desc:'撐得久才是本錢。' },
-  { id:'discipline',name:'規訓',   cost:15, exp:16, eff:{obedience:4,mood:-4},      desc:'界線要一次劃清楚。' },
-  { id:'bond',      name:'陪伴',   cost:8,  exp:6,  eff:{mood:8,rel:4},             desc:'什麼都不做，只是待著。' },
+  { id:'etiquette', name:'教養', cost:14, exp:14, eff:{obedience:2,mood:1}, desc:'規矩、應對、姿態。' },
+  { id:'charm',     name:'魅惑', cost:16, exp:12, eff:{charm:2},           desc:'眼神、語調、靠近的時機。' },
+  { id:'stamina',   name:'體能', cost:16, exp:12, eff:{staminaMax:3},      desc:'撐得久才是本錢。' },
+  { id:'discipline',name:'規訓', cost:15, exp:16, eff:{obedience:4,mood:-4}, desc:'界線要一次劃清楚。' },
+  { id:'bond',      name:'陪伴', cost:8,  exp:6,  eff:{mood:8,rel:4},      desc:'什麼都不做，只是待著。' },
 ];
 
-/* 住所：租房以「週」計；買房一次性 */
+/* ---------- 住所：5 街區 × 2~3 間 ---------- */
 const HOUSES = [
-  { id:'room',   name:'廉租單間', type:'rent', rent:350,  cap:1, bonus:{},
-    districts:['harbor','industrial','greenhouse'], desc:'一張床、一扇窗、一道會漏風的門。' },
-  { id:'flat',   name:'舊城兩房公寓', type:'rent', rent:700, cap:2, bonus:{recover:0.10},
-    districts:['harbor','industrial','greenhouse','central'], desc:'有客廳，代表你有地方「教」。' },
-  { id:'flower', name:'花街小樓', type:'rent', rent:1400, cap:3, bonus:{train:0.15,recover:0.10},
-    districts:['greenhouse','central'], desc:'樓下是花店，空氣一直很甜。' },
-  { id:'villa',  name:'城郊宅邸', type:'buy', price:48000, cap:5, bonus:{train:0.20,recover:0.20,upkeep:-0.15},
-    districts:['greenhouse','industrial'], desc:'圍牆、院子、沒人聽得見的距離。' },
-  { id:'skypent',name:'雲頂頂層', type:'buy', price:180000, cap:8, bonus:{train:0.30,recover:0.30,upkeep:-0.25,sell:0.12},
-    districts:['skyline'], desc:'整層都是你的。落地窗底下是整個城市。' },
+  { id:'h1', district:'harbor', name:'廉租單間', type:'rent', rent:350, cap:1, bonus:{},
+    desc:'一張床、一扇窗、一道會漏風的門。' },
+  { id:'h2', district:'harbor', name:'倉庫閣樓', type:'rent', rent:520, cap:2, bonus:{recover:0.08},
+    desc:'樓下堆著別人的貨，樓上只有你和她的呼吸聲。' },
+  { id:'h3', district:'harbor', name:'港邊老屋', type:'buy', price:26000, cap:3, bonus:{recover:0.12,upkeep:-0.10},
+    desc:'潮氣重，但圍牆夠高。' },
+
+  { id:'i1', district:'industrial', name:'鐵皮工寮', type:'rent', rent:300, cap:1, bonus:{},
+    desc:'下雨時屋頂會唱歌，唱一整夜。' },
+  { id:'i2', district:'industrial', name:'外環雙拼', type:'rent', rent:600, cap:2, bonus:{train:0.08},
+    desc:'一邊住人，一邊可以拿來「教」。' },
+  { id:'i3', district:'industrial', name:'舊廠改建宅', type:'buy', price:22000, cap:4, bonus:{train:0.15,upkeep:-0.12},
+    desc:'挑高、空曠、回音很好。她叫你名字時會繞很久。' },
+
+  { id:'g1', district:'greenhouse', name:'花街小樓', type:'rent', rent:900, cap:2, bonus:{train:0.12,recover:0.08},
+    desc:'樓下是花店，空氣一直很甜。' },
+  { id:'g2', district:'greenhouse', name:'溫室旁公寓', type:'rent', rent:1300, cap:3, bonus:{train:0.18,recover:0.10},
+    desc:'玻璃反光，白天整間都是綠的。' },
+  { id:'g3', district:'greenhouse', name:'花圃宅', type:'buy', price:42000, cap:4, bonus:{train:0.20,recover:0.15,upkeep:-0.10},
+    desc:'有院子。她第一次赤腳踩上草地時會愣一下。' },
+
+  { id:'c1', district:'central', name:'中央大道套房', type:'rent', rent:1100, cap:2, bonus:{recover:0.10},
+    desc:'窗外永遠有聲音，永遠有人醒著。' },
+  { id:'c2', district:'central', name:'鬧區樓中樓', type:'rent', rent:1800, cap:3, bonus:{train:0.15,recover:0.12},
+    desc:'樓上睡覺，樓下訓練。隔音很好。' },
+  { id:'c3', district:'central', name:'中央頂樓宅', type:'buy', price:78000, cap:6, bonus:{train:0.22,recover:0.20,upkeep:-0.18,sell:0.08},
+    desc:'電梯直達。沒有人知道你帶誰回家。' },
+
+  { id:'s1', district:'skyline', name:'雲頂行政公寓', type:'rent', rent:2600, cap:4, bonus:{train:0.25,recover:0.20},
+    desc:'安靜到能聽見彼此的心跳。' },
+  { id:'s2', district:'skyline', name:'雲端獨棟', type:'buy', price:160000, cap:8, bonus:{train:0.32,recover:0.30,upkeep:-0.25,sell:0.15},
+    desc:'整層都是你的。落地窗底下是整個城市。' },
+];
+
+/* ---------- 關係階段（AI 必須照這個寫） ---------- */
+const STAGES = [
+  { min:0,  name:'陌生', tip:'她還在觀察你。回應簡短、保持距離，眼神會先移開。' },
+  { min:15, name:'好奇', tip:'她開始會多看你一眼，偶爾主動問一句，但還帶著試探。' },
+  { min:35, name:'熟絡', tip:'她會接你的話、會鬧你，身體距離自然縮短。' },
+  { min:55, name:'親近', tip:'她會主動靠近、找藉口碰你，佔有慾開始冒出來。' },
+  { min:75, name:'依戀', tip:'明顯依賴你，會吃醋、會等門、會在意你對別人好。' },
+  { min:90, name:'獨佔', tip:'幾乎不再隱藏慾望與獨佔心，語氣與身體都很直接。' },
 ];
 
 const NAME_POOL = ['莉緹','薇菈','賽琳','露娜','莓莓','千棘','霜','焰綺','阿碧','繭',

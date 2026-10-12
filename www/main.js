@@ -1,5 +1,5 @@
 /* ==========================================================
-   動作層：遊戲邏輯操作
+   動作層：遊戲邏輯與交互
    ========================================================== */
 
 function resetToSetup(){
@@ -13,25 +13,25 @@ function resetToSetup(){
   + '<button data-g="男性">男性</button><button data-g="女性" class="on">女性</button><button data-g="不指定">不指定</button></div></div>'
   + '<div class="field"><label>你的名字（敘事用，可留空）</label><input id="b-name" placeholder="留空則以稱呼代替"></div>'
   + '<p style="font-size:11.5px;color:#9b8fa6;line-height:1.7">起始資金 ₡4,800，住在舊港區的廉租單間（週租 ₡350）。'
-  + '領養第一隻魅魔之後，飼育生活才真正開始——而你們，還只是陌生人。</p>'
-  + '<button class="btn" id="b-start" style="width:100%;margin-top:8px">前往官方領養所</button></div>';
+  + '領養與飼育生活即將展開，你們將從完全陌生開始。</p>'
+  + '<button class="btn" id="b-start" style="width:100%;margin-top:8px">開始經營飼育所</button></div>';
 
-  b.querySelectorAll('#b-gender button').forEach(x=>x.onclick=()=>{
-    b.querySelectorAll('#b-gender button').forEach(y=>y.classList.remove('on')); x.classList.add('on');
-  });
+  b.querySelectorAll('#b-gender button').forEach(function(x){ x.onclick=function(){
+    b.querySelectorAll('#b-gender button').forEach(function(y){ y.classList.remove('on'); }); x.classList.add('on');
+  }; });
 
   var startBtn = $('b-start');
   if (startBtn){
-    startBtn.onclick = async ()=>{
+    startBtn.onclick = async function(){
       try{
         var gb = b.querySelector('#b-gender button.on');
         var title = $('b-title').value.trim() || '主人';
-        newGame({ name: $('b-name').value.trim() || title, gender: gb?gb.dataset.g:'女性', title });
+        newGame({ name: $('b-name').value.trim() || title, gender: gb?gb.dataset.g:'女性', title: title });
         b.classList.add('off');
         refreshMarket();
         if (window.render) window.render();
-        if (window.showTab) window.showTab('market');
-        toast('已建立存檔，帶你去官方領養所');
+        if (window.showTab) window.showTab('home');
+        toast('經營開始，前往市場尋找第一隻魅魔');
         await openingScene();
       }catch(err){ alert('啟動出錯：' + err.message); }
     };
@@ -42,15 +42,15 @@ async function openingScene(){
   if (!S || !S.ai || !S.ai.apiKey){
     if (S && S.log){
       S.log.push({ d:1, p:'清晨',
-        text:'你在官方領養所門口停下。玻璃窗後坐著幾隻等待登記的魅魔，她們抬起頭看你一眼，又各自移開視線——沒有人認識你。',
-        chosen:'前往領養所', choices:['走進大廳','先在窗外看一會'] });
+        text:'你在舊港區的飼育所醒來。今天該出門逛逛市場，或是四處走走。（尚未設定 API Key，請至「設定」填寫以開啟 AI 劇情。）',
+        chosen:'開始第一天', choices:['前往市場看看待售的魅魔','前往商店購買物資','在附近巡視'] });
       save();
     }
     if (window.render) window.render(); return;
   }
   setBusy(true, 'AI 正在鋪陳開場…');
   try{
-    await advanceScene('第一天清晨，我（' + S.master.title + '）第一次走進官方領養所，來看今天市場上登記的魅魔。請依「市場現貨」清單裡真實存在的那幾隻來寫，她們對我是完全陌生的，態度保持距離與打量。');
+    await advanceScene('第一天清晨，我（' + S.master.title + '）剛接手這家飼育所。請寫一段開場，描寫周圍環境與我準備出門前往市場尋找魅魔的心情。');
   }catch(e){ toast(e.message); }
   setBusy(false); if (window.render) window.render();
 }
@@ -72,7 +72,7 @@ async function choose(c){
 }
 
 function actFeed(sid, fid){
-  var s = S.succubi.find(x=>x.id===sid); if (!s || !(S.food[fid]>0)) return;
+  var s = S.succubi.find(function(x){ return x.id===sid; }); if (!s || !(S.food[fid]>0)) return;
   S.food[fid]--; if (!S.food[fid]) delete S.food[fid];
   var f = FOODS[fid], pref = (RACES[s.race].food === fid);
   var log = applyEff(s, { fullness: Math.round(f.fill * (pref?1.5:0.6)), mood: pref?8:-4 }, 1);
@@ -81,7 +81,7 @@ function actFeed(sid, fid){
 }
 
 function actItem(sid, iid){
-  var s = S.succubi.find(x=>x.id===sid); if (!s || !(S.bag[iid]>0)) return;
+  var s = S.succubi.find(function(x){ return x.id===sid; }); if (!s || !(S.bag[iid]>0)) return;
   var it = ITEMS[iid];
   if (it.kind==='harsh' && !S.settings.harshItems) return;
   S.bag[iid]--; if (!S.bag[iid]) delete S.bag[iid];
@@ -89,18 +89,18 @@ function actItem(sid, iid){
   toast(s.name + '：' + log); flashScreen();
   S.log.push({ d:S.day, p:PHASES[S.phase],
     text: (it.kind==='harsh'
-      ? '你取出' + it.name + '。金屬先吃掉她的體溫，' + s.name + '的呼吸亂了一拍，然後整個人安靜下來，只剩很輕的、咬著牙的抽氣聲。'
-      : '你把' + it.name + '用在' + s.name + '身上。她沒有立刻反應，只是先看了你的手一眼，然後才慢慢把視線移開。'),
-    chosen:'使用' + it.name, choices:['繼續','收手','換一個'] });
+      ? '你取出' + it.name + '。金屬觸感冰涼，' + s.name + '的呼吸亂了一拍，接著整個安靜下來。'
+      : '你把' + it.name + '用在' + s.name + '身上。她看了你的手一眼，沒有退開。'),
+    chosen:'使用' + it.name, choices:['繼續互動','收手休息'] });
   save(); if (window.render) window.render();
 }
 
 function actTrain(sid, tid){
-  var s = S.succubi.find(x=>x.id===sid), T = TRAININGS.find(t=>t.id===tid);
+  var s = S.succubi.find(function(x){ return x.id===sid; }), T = TRAININGS.find(function(t){ return t.id===tid; });
   if (!s || !T) return;
   if (S.stamina < T.cost){ toast('主控體力不足'); return; }
   if (s.stamina < Math.round(T.cost*0.8)){ toast(s.name + ' 太累了'); return; }
-  if (s.fullness <= 0){ toast(s.name + ' 餓著，先餵食'); return; }
+  if (s.fullness <= 0){ toast(s.name + ' 肚子餓，請先餵食'); return; }
   S.stamina -= T.cost;
   applyEff(s, { stamina: -Math.round(T.cost*0.8), fullness: -8 }, 1);
   var log = applyEff(s, T.eff, 1 + (houseBonus().train||0));
@@ -110,8 +110,8 @@ function actTrain(sid, tid){
 }
 
 function actKept(sid){
-  var s = S.succubi.find(x=>x.id===sid); if (!s) return;
-  S.succubi.forEach(x=> x.kept=false);
+  var s = S.succubi.find(function(x){ return x.id===sid; }); if (!s) return;
+  S.succubi.forEach(function(x){ x.kept=false; });
   s.kept = true;
   S.facts.push(s.name + ' 成為自留魅魔（第' + S.day + '天）');
   toast(s.name + ' 成為你的自留魅魔'); flashScreen();
@@ -119,7 +119,7 @@ function actKept(sid){
 }
 
 function actPermanent(sid){
-  var s = S.succubi.find(x=>x.id===sid); if (!s) return;
+  var s = S.succubi.find(function(x){ return x.id===sid; }); if (!s) return;
   if ((s.rel||0) < 60){ toast('關係需達 60（目前 ' + (s.rel||0) + '）'); return; }
   s.contract = 'permanent';
   S.facts.push(s.name + ' 與主人簽下永久契約（第' + S.day + '天）');
@@ -127,151 +127,26 @@ function actPermanent(sid){
   save(); if (window.render) window.render();
 }
 
-function actBuyItem(k){
-  var p = effectivePrice(ITEMS[k].price);
-  if (S.money < p){ toast('資金不足'); return; }
-  S.money -= p; S.bag[k] = (S.bag[k]||0)+1;
-  toast('購入 ' + ITEMS[k].name + '（-' + fmt(p) + '）'); flashScreen(); save(); if (window.render) window.render();
-}
-function actBuyFood(k){
-  var p = foodPrice(k);
-  if (S.money < p){ toast('資金不足'); return; }
-  S.money -= p; S.food[k] = (S.food[k]||0)+1;
-  toast('購入 ' + FOODS[k].name + '（-' + fmt(p) + '）'); flashScreen(); save(); if (window.render) window.render();
-}
-
-function actBuySuccubus(id, src){
-  try{
-    var list = (src==='official' ? S.market.official : S.market.black) || [];
-    var m = list.find(x=>x.id===id);
-    if (!m){ toast('這隻已經不在名單上了'); return; }
-    var price = src==='official' ? m.price : m.blackPrice;
-    if (S.succubi.length >= capacity()){ toast('住所已滿（上限 ' + capacity() + '隻），先搬家或賣掉一隻'); return; }
-    if (S.money < price){ toast('資金不足（需要 ' + fmt(price) + '）'); return; }
-
-    var R = RACES[m.race];
-    modal('<h3>' + (src==='official'?'官方領養':'黑市交易') + '</h3>'
-      + '<div class="card"><h4>' + esc(m.name) + ' ' + gradeTag(m.level) + '</h4>'
-      + '<p>' + R.name + '｜' + esc(m.persona) + '｜魅惑 ' + m.charm + '｜服從 ' + m.obedience + '</p>'
-      + '<div class="look">' + esc(m.look) + '</div>'
-      + '<div class="eff">費用：<b class="minus">-' + fmt(price) + '</b>　餘額：<b>' + fmt(S.money - price) + '</b>'
-      + (src==='black' ? '<br>黑市貨源有風險，缺陷機率約三成。' : '<br>官方會附上健康與契約證明。') + '</div></div>'
-      + '<div class="tags"><button class="btn" id="ok-buy">確認' + (src==='official'?'領養':'買下') + '</button>'
-      + '<button class="btn ghost" onclick="closeModal()">再想想</button></div>');
-
-    $('ok-buy').onclick = async ()=>{
-      try{
-        var l2 = (src==='official' ? S.market.official : S.market.black) || [];
-        var idx = l2.findIndex(x=>x.id===id);
-        if (idx < 0){ toast('這隻已經被領走了'); closeModal(); return; }
-        S.money -= price;
-        l2.splice(idx, 1);
-        var defect = null;
-        if (src==='black' && Math.random() < 0.34) defect = pick(DEFECTS).id;
-        var s = rollSuccubus(m.race, { name:m.name, persona:m.persona, level:m.level, defect, look:m.look });
-        s.charm = m.charm; s.obedience = m.obedience; s.look = m.look;
-        S.succubi.push(s);
-        S.facts.push('第' + S.day + '天' + (src==='official'?'官方領養':'黑市購入') + ' ' + s.name + '（' + R.name + '），彼此仍是陌生。');
-        if (defect) toast('黑市貨源有問題…' + s.name + ' 帶有「' + s.defect + '」');
-        save(); closeModal(); flashScreen();
-        if (window.render) window.render();
-        toast(s.name + ' 已加入你的飼育所（-' + fmt(price) + '）');
-
-        if (S.ai && S.ai.apiKey){
-          busy = true; if (window.render) window.render();
-          try{
-            await advanceScene((src==='official'
-              ? '我剛在官方領養所辦完手續，把 ' + s.name + ' 帶回住處。'
-              : '我在黑市付完錢，把 ' + s.name + ' 帶回住處。')
-              + '這是我們第一次單獨相處，她對我完全陌生。請寫她進門後那一小段，保持距離感。');
-          }catch(e){ toast(e.message); }
-          busy = false; if (window.render) window.render();
-        }
-      }catch(err){ alert('領養出錯：' + err.message); }
-    };
-  }catch(err){ alert('領養出錯：' + err.message); }
-}
-
-function actSell(sid, ch){
-  var s = S.succubi.find(x=>x.id===sid); if (!s) return;
-  if (ch==='official'){
-    var p = officialOffer(s);
-    modal('<h3>官方收養</h3><p>官方會安排適合的主人，並保障魅魔處置權。收購價 ' + fmt(p) + '。</p>'
-      + '<div class="tags"><button class="btn" id="ok-sell">確定送出</button><button class="btn ghost" onclick="closeModal()">取消</button></div>');
-    $('ok-sell').onclick = ()=>{
-      S.money += p;
-      S.succubi = S.succubi.filter(x=>x.id!==sid);
-      S.facts.push('第' + S.day + '天 ' + s.name + ' 被官方收養');
-      closeModal(); flashScreen(); save(); if (window.render) window.render(); toast(s.name + ' 已送往官方（+' + fmt(p) + '）');
-    };
-  } else {
-    var floor = blackFloor(s), weird = Math.random();
-    var bid = Math.round(floor * (weird<0.2 ? rint(150,230)/100 : rint(60,140)/100));
-    var buyer = pick(BLACK_MARKET_BUYERS);
-    modal('<h3>黑市拍賣</h3><p>買家：' + buyer.n + '（' + buyer.d + '）</p>'
-      + '<div class="rows"><div><span>起標</span><span>' + fmt(floor) + '</span></div>'
-      + '<div><span>目前出價</span><span>' + fmt(bid) + '</span></div>'
-      + '<div><span>風險</span><span>' + (weird<0.2?'高':'中') + '</span></div></div>'
-      + '<div class="tags"><button class="btn" id="ok-blk">成交</button><button class="btn ghost" id="no-blk">帶回家</button></div>');
-    $('ok-blk').onclick = ()=>{
-      S.money += bid;
-      S.succubi = S.succubi.filter(x=>x.id!==sid);
-      S.facts.push('第' + S.day + '天 ' + s.name + ' 被黑市賣出，價格 ' + fmt(bid));
-      if (weird < 0.2){ S.flags.oddBuyer = (S.flags.oddBuyer||0)+1; S.facts.push('黑市出現異常買家'); }
-      closeModal(); flashScreen(); save(); if (window.render) window.render(); toast('成交 ' + fmt(bid));
-    };
-    $('no-blk').onclick = ()=>{ applyEff(s,{mood:-5,obedience:-2},1); closeModal(); save(); if (window.render) window.render(); toast('你把 ' + s.name + ' 帶回家'); };
-  }
-}
-
-function actAuction(sid){
-  var s = S.succubi.find(x=>x.id===sid); if (!s) return;
-  var base = blackFloor(s), bidders = [];
-  for (var i=0;i<rint(2,3);i++){
-    var b = pick(BLACK_MARKET_BUYERS);
-    bidders.push({ n:b.n, d:b.d, p: Math.round(base * rint(60,180)/100) });
-  }
-  bidders.sort((a,b)=>b.p-a.p);
-  modal('<h3>今晚的拍賣台</h3><p>' + s.name + ' 被帶上台。檯燈很亮，她沒有看你。</p>'
-    + bidders.map((b,i)=>'<div class="card"><h4>' + b.n + ' <span class="tag g">' + fmt(b.p) + '</span></h4><p>' + b.d + '</p>'
-      + '<button class="btn tiny" data-take="' + i + '">賣給他</button></div>').join('')
-    + '<button class="btn ghost" id="au-none" style="margin-top:8px">全部拒絕，帶回家</button>');
-  document.querySelectorAll('[data-take]').forEach(btn=> btn.onclick = ()=>{
-    var b = bidders[parseInt(btn.dataset.take)];
-    S.money += b.p;
-    S.succubi = S.succubi.filter(x=>x.id!==sid);
-    S.facts.push('第' + S.day + '天 ' + s.name + ' 於黑市拍賣以 ' + fmt(b.p) + ' 成交');
-    closeModal(); flashScreen(); save(); if (window.render) window.render(); toast('成交 ' + fmt(b.p));
-  });
-  $('au-none').onclick = ()=>{ applyEff(s,{mood:-6,obedience:-3},1); closeModal(); save(); if (window.render) window.render(); toast(s.name + ' 跟你回家了'); };
-}
-
 function actMove(hid){
-  var h = HOUSES.find(x=>x.id===hid); if (!h) return;
+  var h = HOUSES.find(function(x){ return x.id===hid; }); if (!h) return;
   var cost = h.type==='rent' ? h.rent*2 : h.price;
   if (S.money < cost){ toast('資金不足（需要 ' + fmt(cost) + '）'); return; }
   S.money -= cost;
   S.housing = deep(h);
   S.district = h.district;
   if (h.type==='rent') S.housing.rent = h.rent;
-  S.facts.push('第' + S.day + '天 搬到 ' + DISTRICTS.find(d=>d.id===h.district).name + ' 的 ' + h.name);
+  S.facts.push('第' + S.day + '天 搬到 ' + DISTRICTS.find(function(d){ return d.id===h.district; }).name + ' 的 ' + h.name);
   toast('已搬入 ' + h.name + '（-' + fmt(cost) + '）'); flashScreen();
-  refreshMarket(); save(); if (window.render) window.render();
-}
-
-function actGoto(did){
-  S.district = did;
-  toast('你移動到 ' + dist().name); flashScreen();
   refreshMarket(); save(); if (window.render) window.render();
 }
 
 function refreshMarket(){
   if (!S) return;
   var pool = Object.keys(RACES);
-  var mk = src => {
+  var mk = function(src){
     var out = [], n = src==='official' ? 2 : 3;
     for (var i=0;i<n;i++){
-      var avail = pool.filter(r => !(src==='official' && RACES[r].rare) || Math.random()<0.15);
+      var avail = pool.filter(function(r){ return !(src==='official' && RACES[r].rare) || Math.random()<0.15; });
       var rid = pick(avail);
       var lv = Math.random()<0.18 ? rint(3,4) : rint(1,2);
       var s = rollSuccubus(rid, { level: lv, defect: (src==='black' && Math.random()<0.3) ? pick(DEFECTS).id : null });
@@ -291,7 +166,7 @@ function doSleep(){
   endDay(); save();
   if (S.flags.gameOver){
     if (window.render) window.render();
-    modal('<h3>破產</h3><p>結算後資金見底。住所的燈被切了。<br><br>這一輪飼育到此結束。</p>'
+    modal('<h3>破產</h3><p>資金見底，飼育所無法維持營運。<br><br>這一輪遊戲到此結束。</p>'
       + '<button class="btn" onclick="closeModal()">知道了</button>');
     return;
   }
@@ -302,30 +177,30 @@ function doSleep(){
 
 function start(){
   var tabbar = $('tabbar');
-  if (tabbar) tabbar.addEventListener('click', e=>{
+  if (tabbar) tabbar.addEventListener('click', function(e){
     var b = e.target.closest('button[data-tab]'); if (b && window.showTab) window.showTab(b.dataset.tab);
   });
   var modalEl = $('modal');
-  if (modalEl) modalEl.addEventListener('click', e=>{ if (e.target.id==='modal') closeModal(); });
+  if (modalEl) modalEl.addEventListener('click', function(e){ if (e.target.id==='modal') closeModal(); });
 
   var btnComp = $('btn-compress');
-  if (btnComp) btnComp.onclick = async ()=>{
+  if (btnComp) btnComp.onclick = async function(){
     if (!S.ai.apiKey){ toast('請先設定 API Key'); return; }
     toast('壓縮中…'); await compressStory(); if (window.render) window.render();
   };
   var freeSend = $('free-send');
-  if (freeSend) freeSend.onclick = ()=>{
+  if (freeSend) freeSend.onclick = function(){
     var v = $('free-input').value.trim(); if (!v) return;
     $('free-input').value = ''; choose('（自由描述）' + v);
   };
   var homeChoices = $('home-choices');
-  if (homeChoices) homeChoices.addEventListener('click', e=>{
+  if (homeChoices) homeChoices.addEventListener('click', function(e){
     var b = e.target.closest('button'); if (!b) return;
     if (b.dataset.choice) return choose(b.dataset.choice);
     if (b.dataset.act==='sleep') return doSleep();
     if (b.dataset.act==='restart') return resetToSetup();
   });
-  setInterval(()=>{ if (S) save(); }, 20000);
+  setInterval(function(){ if (S) save(); }, 20000);
 
   var sv = load();
   if (sv){

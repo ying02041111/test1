@@ -71,42 +71,48 @@ async function choose(c){
   setBusy(false); if (window.render) window.render();
 }
 
-function actFeed(sid, fid){
-  var s = S.succubi.find(function(x){ return x.id===sid; }); if (!s || !(S.food[fid]>0)) return;
-  S.food[fid]--; if (!S.food[fid]) delete S.food[fid];
-  var f = FOODS[fid], pref = (RACES[s.race].food === fid);
-  var log = applyEff(s, { fullness: Math.round(f.fill * (pref?1.5:0.6)), mood: pref?8:-4 }, 1);
-  toast(s.name + '：' + log); flashScreen();
-  save(); if (window.render) window.render();
+/* 確切執行購買魅魔（扣款＋將魅魔加入背包團隊） */
+window.executeBuySuccubus = async function(m, src){
+  var price = src==='official' ? m.price : m.blackPrice;
+  if (S.succubi.length >= capacity()){ toast('住所已滿，先搬家或販售魅魔'); return; }
+  if (S.money < price){ toast('資金不足'); return; }
+
+  S.money -= price;
+  var list = src==='official' ? S.market.official : S.market.black;
+  var idx = list.findIndex(function(x){ return x.id===m.id; });
+  if (idx >= 0) list.splice(idx, 1);
+
+  var defect = null;
+  if (src==='black' && Math.random() < 0.34) defect = pick(DEFECTS).id;
+  var s = rollSuccubus(m.race, { name:m.name, persona:m.persona, level:m.level, defect:defect, look:m.look });
+  s.charm = m.charm; s.obedience = m.obedience;
+  S.succubi.push(s);
+  S.facts.push('第' + S.day + '天 ' + (src==='official'?'官方':'黑市') + '購入魅魔 ' + s.name + '（' + RACES[s.race].name + '）');
+
+  toast('成功購入 ' + s.name + '（-' + fmt(price) + '）');
+  flashScreen(); save(); if (window.render) window.render();
+
+  if (S.ai && S.ai.apiKey){
+    setBusy(true, 'AI 正在寫入交易劇情…');
+    try{
+      await advanceScene('我付清了 ' + fmt(price) + '，正式買下了 ' + s.name + '。這是我們剛完成交割並準備一起離開的場景。');
+    }catch(e){ toast(e.message); }
+    setBusy(false); if (window.render) window.render();
+  }
+};
+
+function actBuyItem(k){
+  var p = effectivePrice(ITEMS[k].price);
+  if (S.money < p){ toast('資金不足'); return; }
+  S.money -= p; S.bag[k] = (S.bag[k]||0)+1;
+  toast('購入 ' + ITEMS[k].name + '（-' + fmt(p) + '）'); flashScreen(); save(); if (window.render) window.render();
 }
 
-function actItem(sid, iid){
-  var s = S.succubi.find(function(x){ return x.id===sid; }); if (!s || !(S.bag[iid]>0)) return;
-  var it = ITEMS[iid];
-  if (it.kind==='harsh' && !S.settings.harshItems) return;
-  S.bag[iid]--; if (!S.bag[iid]) delete S.bag[iid];
-  var log = applyEff(s, it.eff, 1);
-  toast(s.name + '：' + log); flashScreen();
-  S.log.push({ d:S.day, p:PHASES[S.phase],
-    text: (it.kind==='harsh'
-      ? '你取出' + it.name + '。金屬觸感冰涼，' + s.name + '的呼吸亂了一拍，接著整個安靜下來。'
-      : '你把' + it.name + '用在' + s.name + '身上。她看了你的手一眼，沒有退開。'),
-    chosen:'使用' + it.name, choices:['繼續互動','收手休息'] });
-  save(); if (window.render) window.render();
-}
-
-function actTrain(sid, tid){
-  var s = S.succubi.find(function(x){ return x.id===sid; }), T = TRAININGS.find(function(t){ return t.id===tid; });
-  if (!s || !T) return;
-  if (S.stamina < T.cost){ toast('主控體力不足'); return; }
-  if (s.stamina < Math.round(T.cost*0.8)){ toast(s.name + ' 太累了'); return; }
-  if (s.fullness <= 0){ toast(s.name + ' 肚子餓，請先餵食'); return; }
-  S.stamina -= T.cost;
-  applyEff(s, { stamina: -Math.round(T.cost*0.8), fullness: -8 }, 1);
-  var log = applyEff(s, T.eff, 1 + (houseBonus().train||0));
-  gainExp(s, T.exp);
-  toast(s.name + ' 訓練完成：' + log); flashScreen();
-  save(); if (window.render) window.render();
+function actBuyFood(k){
+  var p = foodPrice(k);
+  if (S.money < p){ toast('資金不足'); return; }
+  S.money -= p; S.food[k] = (S.food[k]||0)+1;
+  toast('購入 ' + FOODS[k].name + '（-' + fmt(p) + '）'); flashScreen(); save(); if (window.render) window.render();
 }
 
 function actKept(sid){

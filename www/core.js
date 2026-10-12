@@ -1,8 +1,8 @@
 /* ==========================================================
-   核心：狀態、經濟、數值結算。完全不呼叫 AI。
+   核心：狀態、經濟、數值結算
    ========================================================== */
 
-const SAVE_KEY = 'ck_save_v2';
+const SAVE_KEY = 'ck_save_v3';
 let S = null;
 
 const $ = id => document.getElementById(id);
@@ -24,7 +24,6 @@ function flashScreen(){
   f.classList.add('on'); setTimeout(()=>f.classList.remove('on'), 220);
 }
 
-/* ---------- 等級 S~F ---------- */
 function gradeOf(lv){ return GRADES[clamp((lv||1)-1, 0, GRADES.length-1)]; }
 function gradeTag(lv){
   const g = gradeOf(lv);
@@ -38,14 +37,19 @@ function stageOf(s){
   return st;
 }
 
-/* ---------- 建立新遊戲 ---------- */
 function newGame(masterInfo){
   masterInfo = masterInfo || {};
   S = {
     day: 1, phase: 0, money: 4800, stamina: 100, power: 10,
     district: 'harbor',
     housing: deep(HOUSES[0]),
-    master: { name: masterInfo.name || '主人', title: masterInfo.title || '主人', gender: masterInfo.gender || '女性' },
+    master: {
+      name: masterInfo.name || '主人',
+      title: masterInfo.title || '主人',
+      gender: masterInfo.gender || '女性',
+      style: masterInfo.style || '溫柔',
+      story: masterInfo.story || '剛接手這間舊港區的飼育所，正試著建立自己的勢力與規矩。'
+    },
     succubi: [], food: { shadowdew: 1 }, bag: { nectar: 1 },
     market: { official: [], black: [] },
     facts: ['第1天：開始經營飼育所。目前沒有任何魅魔，一切都還陌生。'],
@@ -58,15 +62,12 @@ function newGame(masterInfo){
   save();
 }
 
-/* ---------- 存檔修補：舊存檔缺欄位會自動補齊 ---------- */
 function migrateSave(o){
   if (!o || typeof o !== 'object') return null;
   o.flags = Object.assign({ gameOver:false, blackBought:0 }, o.flags || {});
-  o.settings = Object.assign({ appName:'緋夜飼育錄', lang:'hant', tone:2, harshItems:false,
-    keepRecent:3, autoCompressTokens:5000 }, o.settings || {});
-  o.ai = Object.assign({ provider:'gemini', apiKey:'', baseUrl:'https://generativelanguage.googleapis.com/v1beta',
-    model:'gemini-flash-latest', temp:0.85, maxTokens:700, jsonMode:true }, o.ai || {});
-  o.master = Object.assign({ name:'主人', title:'主人', gender:'女性' }, o.master || {});
+  o.settings = Object.assign({ appName:'緋夜飼育錄', lang:'hant', tone:2, harshItems:false, keepRecent:3, autoCompressTokens:5000 }, o.settings || {});
+  o.ai = Object.assign({ provider:'gemini', apiKey:'', baseUrl:'https://generativelanguage.googleapis.com/v1beta', model:'gemini-flash-latest', temp:0.85, maxTokens:700, jsonMode:true }, o.ai || {});
+  o.master = Object.assign({ name:'主人', title:'主人', gender:'女性', style:'溫柔', story:'剛接手這間舊港區的飼育所，正試著建立自己的勢力與規矩。' }, o.master || {});
   o.food = o.food || {}; o.bag = o.bag || {};
   o.market = o.market || { official:[], black:[] };
   o.facts = Array.isArray(o.facts) ? o.facts : [];
@@ -79,19 +80,16 @@ function migrateSave(o){
   o.power = typeof o.power === 'number' ? o.power : 10;
   o.district = o.district || 'harbor';
   if (!o.housing) o.housing = deep(HOUSES[0]);
-  // 魅魔欄位補齊
   o.succubi.forEach(s=>{
     s.rel = typeof s.rel === 'number' ? s.rel : 0;
     s.contract = s.contract || 'temporary';
     s.kept = !!s.kept;
-    s.traits = s.traits || [];
     if (!s.look) s.look = buildLook(RACES[s.race] || RACES.verdant);
     if (typeof s.exp !== 'number') s.exp = 0;
   });
   return o;
 }
 
-/* ---------- 派生數值 ---------- */
 function dist(){ return DISTRICTS.find(d=>d.id===(S&&S.district)) || DISTRICTS[0]; }
 function houseBonus(){ return (S && S.housing && S.housing.bonus) || {}; }
 function capacity(){ return (S && S.housing) ? S.housing.cap : 1; }
@@ -106,16 +104,14 @@ function dailyUpkeep(){
 function weeklyRent(){ return (S && S.housing && S.housing.type==='rent') ? S.housing.rent : 0; }
 function daysToRent(){ const d=(S?S.day:1)%7; return 7 - (d===0?7:d); }
 function isAuctionDay(){ return (S?S.day:1) % 7 === 0; }
-function foodOf(raceId){ return FOODS[RACES[raceId].food]; }
 function effectivePrice(base){ return Math.max(1, Math.round(base * dist().cost)); }
 function foodPrice(fid){ return Math.max(1, Math.round(FOODS[fid].price * dist().food)); }
 function shopItems(){ return (dist().items || []).slice(); }
 function shopFoods(){ return (dist().foods || []).slice(); }
 
-/* ---------- 生成魅魔 ---------- */
 function rollSuccubus(raceId, opts){
   opts = opts || {};
-  const R = RACES[raceId], lv = opts.level || 1;
+  const R = RACES[raceId] || RACES.nightwing, lv = opts.level || 1;
   const s = {
     id: uid(), name: opts.name || pick(NAME_POOL), race: raceId,
     persona: opts.persona || pick(R.bias), level: lv, exp: 0,
@@ -123,12 +119,11 @@ function rollSuccubus(raceId, opts){
     obedience: rint(8,20) + (R.mod.obedience||0),
     staminaMax: 100 + (R.mod.staminaMax||0),
     stamina: 0, fullness: rint(40,70), mood: rint(45,70),
-    kept: false, contract: 'temporary', rel: rint(0,6),
-    traits: [], bornDay: S ? S.day : 1, defect: null,
+    kept: false, contract: 'temporary', rel: rint(0,5),
+    traits: [], bornDay: S ? S.day : 1, defect: opts.defect || null,
   };
   s.stamina = s.staminaMax;
-  s.look = buildLook(R);
-  if (opts.defect) applyDefect(s, opts.defect);
+  s.look = opts.look || buildLook(R);
   return s;
 }
 function buildLook(R){
@@ -137,15 +132,7 @@ function buildLook(R){
   return pick(HAIR) + '的髮、' + pick(EYES) + '色的眼，' + pick(BUILDER) + '的身形。'
     + pick(R.look) + '。' + pick([scent, walk]);
 }
-const DEFECTS = [
-  { id:'frail', name:'體虛', apply:s=>{ s.staminaMax-=25; s.stamina=s.staminaMax; } },
-  { id:'scar',  name:'舊傷', apply:s=>{ s.staminaMax-=15; } },
-  { id:'wild',  name:'野性難馴', apply:s=>{ s.obedience-=18; } },
-  { id:'night', name:'夜啼', apply:s=>{ s.traits.push('需額外伙食費 +15/天'); } },
-];
-function applyDefect(s,d){ const D=DEFECTS.find(x=>x.id===d); if(D && D.apply) D.apply(s); s.defect = (D?D.name:'舊傷'); }
 
-/* ---------- 估價 ---------- */
 function officialOffer(s){
   const R = RACES[s.race];
   const base = R.price * (1 + 0.35*(s.level-1)) * (1 + s.charm/110) * (1 + s.obedience/400);
@@ -162,7 +149,6 @@ function officialBuyPrice(raceId){
 }
 function blackBuyPrice(raceId){ return Math.round(officialBuyPrice(raceId) * rint(48,68) / 100); }
 
-/* ---------- 增減 ---------- */
 function gainExp(s, n){
   const mult = 1 + (houseBonus().train||0);
   s.exp += Math.round(n * mult);
@@ -171,6 +157,7 @@ function gainExp(s, n){
   if (s.level >= 7) s.exp = 0;
   if (lv) toast(s.name + ' 升至 ' + gradeOf(s.level) + ' 級');
 }
+
 function applyEff(s, eff, scale){
   scale = scale===undefined ? 1 : scale;
   const log = [];
@@ -187,7 +174,6 @@ function applyEff(s, eff, scale){
   return log.join(' / ');
 }
 
-/* ---------- 日結算 ---------- */
 function endDay(){
   const up = dailyUpkeep();
   S.money -= up;
@@ -209,7 +195,6 @@ function endDay(){
   save();
 }
 
-/* ---------- 存讀檔 ---------- */
 function save(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} }
 function load(){
   try{

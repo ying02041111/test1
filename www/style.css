@@ -1,6 +1,6 @@
 @font-face {
   font-family: 'MyCustomFont';
-  src: url('fonts/myfont.ttf') format('truetype');
+  src: url('fonts/KurewaGothicCjkTc-Regular.woff') format('truetype');
 }
 body {
   font-family: 'MyCustomFont', serif;

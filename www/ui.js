@@ -1,233 +1,180 @@
 /* ==========================================================
-   介面渲染：全部純程式，切分頁不觸發任何 AI 呼叫。
+   AI 層：只在推進劇情 / 壓縮 / 開場呼叫。切分頁完全不碰 AI。
    ========================================================== */
-let curTab = 'home', detailId = null, busy = false;
 
-function showTab(t){
-  curTab = t;
-  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on', p.id === 'page-'+t));
-  document.querySelectorAll('#tabbar button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
-  render();
-  $('pages').scrollTop = 0;
-}
+const PROVIDERS = {
+  openai:     { label:'OpenAI',       base:'https://api.openai.com/v1',                        model:'gpt-4o-mini', json:true },
+  gemini:     { label:'Google Gemini',base:'https://generativelanguage.googleapis.com/v1beta', model:'gemini-flash-latest', json:true, kind:'gemini' },
+  openrouter: { label:'OpenRouter',   base:'https://openrouter.ai/api/v1',                     model:'', json:true },
+  deepseek:   { label:'DeepSeek',     base:'https://api.deepseek.com/v1',                      model:'deepseek-chat', json:true },
+  groq:       { label:'Groq',         base:'https://api.groq.com/openai/v1',                   model:'llama-3.3-70b-versatile', json:true },
+  custom:     { label:'自訂',         base:'',                                                 model:'', json:false },
+};
 
-function render(){
-  if (!S) return;
-  $('tb-title').textContent = S.settings.appName || '緋夜飼育錄';
-  $('tb-when').textContent = '第' + S.day + '天 · ' + PHASES[S.phase];
-  $('tb-money').textContent = fmt(S.money);
-  $('tb-stam').textContent = '體 ' + S.stamina + '/' + maxStamina();
-  $('tb-power').textContent = '權 ' + S.power;
+function estTokens(str){ return Math.round((str||'').length * 0.8); }
 
-  if (curTab==='home') renderHome();
-  if (curTab==='succubi') renderSuccubi();
-  if (curTab==='shop') renderShop();
-  if (curTab==='market') renderMarket();
-  if (curTab==='house') renderHouse();
-  if (curTab==='settings') renderSettings();
-}
+async function aiChat(system, user){
+  const cfg = S.ai;
+  if (!cfg.apiKey) throw new Error('尚未設定 API Key（設定分頁）');
+  const P = PROVIDERS[cfg.provider] || PROVIDERS.custom;
+  const kind = P.kind || 'openai';
 
-function card(label, val, cls, sub){
-  return '<div class="stat"><i>' + label + '</i><b class="' + (cls||'') + '">' + val + '</b>'
-    + (sub?'<i style="margin-top:2px">'+sub+'</i>':'') + '</div>';
-}
-
-/* ---------- 主頁 ---------- */
-function renderHome(){
-  $('home-status').innerHTML = [
-    card('資金', fmt(S.money), S.money < dailyUpkeep()*2 ? 'w':'g', '日結 -' + fmt(dailyUpkeep())),
-    card('主控體力', S.stamina + '/' + maxStamina(), S.stamina<20?'w':'r', '每日回復 30'),
-    card('權力', S.power, 'ok', '解鎖高級街區'),
-    card('房租', weeklyRent()? fmt(weeklyRent()):'—', 'g', weeklyRent()? ('剩 '+daysToRent()+' 天'):'自有'),
-    card('住所', S.housing?S.housing.name:'無', '', '上限 '+capacity()+' 隻'),
-    card('魅魔', S.succubi.length + '/' + capacity(), S.succubi.length>=capacity()?'w':'', '自留 ' + S.succubi.filter(s=>s.kept).length)
-  ].join('');
-
-  const log = $('home-story');
-  log.innerHTML = S.log.slice(-24).map(x=>{
-    if (x.sys) return '<div class="day">' + x.text + '</div>';
-    return '<div class="sc"><div class="me">第'+x.d+'天 · '+x.p+'</div>' + esc(x.text).replace(/\n/g,'<br>') +
-      (x.chosen ? '<div class="ch">▸ ' + esc(x.chosen) + '</div>' : '') + '</div>';
-  }).join('') || '<div class="sc" style="color:#9b8fa6">（點下方選項進行行動。）</div>';
-  log.scrollTop = log.scrollHeight;
-
-  const last = S.log.filter(x=>!x.sys).slice(-1)[0];
-  const ch = $('home-choices');
-  if (S.flags.gameOver){
-    ch.innerHTML = '<button class="bad" data-act="restart">破產了。重新開始</button>';
-  } else {
-    let list = (last && last.choices && last.choices.length) ? last.choices.slice() : ['四處看看','處理日常','前往市場'];
-    ch.innerHTML = list.map(c=>'<button data-choice="' + esc(c) + '">' + esc(c) + '</button>').join('')
-      + '<button class="ghost" data-act="sleep">就寢，結束第' + S.day + '天<small>生活費 -' + fmt(dailyUpkeep())
-      + (S.day%7===0? '，房租 -'+fmt(weeklyRent()):'') + '</small></button>';
+  if (kind === 'gemini'){
+    const url = cfg.baseUrl.replace(/\/$/,'') + '/models/' + cfg.model + ':generateContent?key=' + encodeURIComponent(cfg.apiKey);
+    const body = {
+      systemInstruction: { parts:[{ text: system }] },
+      contents: [{ role:'user', parts:[{ text: user }] }],
+      generationConfig: { temperature: cfg.temp, maxOutputTokens: cfg.maxTokens,
+        ...(cfg.jsonMode ? { responseMimeType:'application/json' } : {}) }
+    };
+    const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('AI 錯誤 ' + r.status + '：' + (await r.text()).slice(0,180));
+    const d = await r.json();
+    const c = d.candidates && d.candidates[0];
+    return (c && c.content && c.content.parts && c.content.parts.map(p=>p.text||'').join('')) || '';
   }
-  const tk = tokenEstimate();
-  $('token-hint').textContent = '約 ' + tk + ' tokens｜錨點 ' + S.facts.length + ' 條｜摘要 ' + (S.summary?S.summary.length:0) + ' 字';
-  $('token-hint').style.color = tk > (S.settings.autoCompressTokens||5000) ? 'var(--warn)' : '';
+
+  const body = {
+    model: cfg.model, temperature: cfg.temp, max_tokens: cfg.maxTokens,
+    messages: [ { role:'system', content: system }, { role:'user', content: user } ],
+  };
+  if (cfg.jsonMode && P.json) body.response_format = { type:'json_object' };
+  const r = await fetch(cfg.baseUrl.replace(/\/$/,'') + '/chat/completions', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + cfg.apiKey },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error('AI 錯誤 ' + r.status + '：' + (await r.text()).slice(0,180));
+  const d = await r.json();
+  return (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || '';
 }
 
-/* ---------- 魅魔 ---------- */
-function renderSuccubi(){
-  const box = $('succubi-list');
-  if (detailId){ const s = S.succubi.find(x=>x.id===detailId); if (s){ box.innerHTML = succubusDetail(s); bindDetail(); return; } detailId=null; }
-  if (!S.succubi.length){ box.innerHTML = '<div class="card"><p>尚未擁有魅魔，請至「市場」領養。</p></div>'; return; }
-  box.innerHTML = S.succubi.map(s=>{
-    const R = RACES[s.race];
-    return '<div class="card" data-open="' + s.id + '">'
-      + '<h4>' + esc(s.name) + ' <span class="tag' + (s.kept?' r':'') + '">' + (s.kept?'自留':'暫契約') + '</span> '
-      + '<span class="tag">' + R.name + '</span></h4>'
-      + '<p>' + esc(s.persona) + '｜Lv.' + s.level + '　飽食 ' + s.fullness + '</p>'
-      + '<div class="bar"><i style="width:' + clamp(s.mood,0,100) + '%"></i></div>'
-      + '<div class="tags"><span class="tag">魅惑 ' + s.charm + '</span><span class="tag">服從 ' + s.obedience + '</span>'
-      + '<span class="tag">體力 ' + s.stamina + '/' + s.staminaMax + '</span>'
-      + (s.kept?'<span class="tag r">關係 ' + s.rel + '</span>':'') + '</div>'
-      + '<p style="margin:0">' + esc(s.look) + '</p></div>';
-  }).join('');
-  box.querySelectorAll('[data-open]').forEach(el=>el.onclick = ()=>{ detailId = el.dataset.open; render(); });
-}
-
-function succubusDetail(s){
-  const R = RACES[s.race], f = FOODS[R.food];
-  const bagFoods = Object.keys(S.food).filter(k=>S.food[k]>0);
-  const bagItems = Object.keys(S.bag).filter(k=>S.bag[k]>0 && (ITEMS[k].kind==='mild' || S.settings.harshItems));
-  const baseRows = [
-    ['種族', R.name], ['主食', f.name + '（' + fmt(foodPrice(R.food)) + '）'],
-    ['等級/經驗', s.level + ' (' + s.exp + '/' + expNeed(s.level) + ')'],
-    ['魅惑值', s.charm], ['服從值', s.obedience],
-    ['體力', s.stamina + ' / ' + s.staminaMax], ['飽食', s.fullness], ['心情', s.mood],
-    ['每日生活費', fmt(succubusUpkeep(s))], ['官方估價', fmt(officialOffer(s))], ['黑市起標', fmt(blackFloor(s))]
+/* ---------- 系統提示 ---------- */
+function sysPrompt(){
+  const lang = S.settings.lang === 'hans' ? '簡體中文' : '繁體中文';
+  const tones = [
+    '含蓄：情慾以氣氛、距離、眼神為主，點到為止。',
+    '成熟：情慾張力與暗示寫滿，寫身體反應與呼吸，過程以氣氛帶過。',
+    '濃烈：把張力推到極限，佔有慾、粗口、痛與血可寫，仍不寫器官級直白描寫。'
   ];
-  if (s.kept) baseRows.push(['關係', s.rel], ['契約', s.contract==='permanent'?'永久':'臨時']);
-
-  return '<button class="btn ghost tiny" data-back="1">‹ 返回列表</button>'
-    + '<div class="card" style="margin-top:10px"><h4>' + esc(s.name) + '</h4>'
-    + '<div class="tags"><span class="tag r">' + R.name + '</span><span class="tag">' + s.persona + '</span>'
-    + '<span class="tag">Lv.' + s.level + '</span>' + (s.kept?'<span class="tag g">自留</span>':'') + '</div>'
-    + '<div class="look">' + esc(s.look) + '</div>' + rows(baseRows) + '</div>'
-
-    + '<div class="card"><h4>餵食</h4><p>庫存：' + (bagFoods.length? bagFoods.map(k=>FOODS[k].name+'×'+S.food[k]).join('、') : '無食物') + '</p><div class="tags">'
-    + Object.keys(FOODS).map(k=>'<button class="btn tiny" data-feed="' + k + '" ' + ((S.food[k]||0)?'':'disabled') + '>' + FOODS[k].name + (k===R.food?'★':'') + ' ×' + (S.food[k]||0) + '</button>').join('') + '</div></div>'
-
-    + '<div class="card"><h4>訓練</h4><div class="tags">' + TRAININGS.map(t=>'<button class="btn tiny" data-train="' + t.id + '">' + t.name + '</button>').join('') + '</div></div>'
-
-    + '<div class="card"><h4>道具</h4><div class="tags">'
-    + (bagItems.length? bagItems.map(k=>'<button class="btn tiny' + (ITEMS[k].kind==='harsh'?' bad':'') + '" data-item="' + k + '">' + ITEMS[k].name + ' ×' + S.bag[k] + '</button>').join('') : '<span class="tiny-note">無可用道具</span>') + '</div></div>'
-
-    + '<div class="card"><h4>歸屬與契約</h4><div class="tags">'
-    + (s.kept ? '' : '<button class="btn tiny" data-kept="' + s.id + '">設為自留</button>')
-    + (s.kept && s.contract!=='permanent' ? '<button class="btn tiny ok" data-perm="' + s.id + '">簽訂永久契約</button>' : '')
-    + (s.kept ? '<button class="btn tiny ghost" data-unkept="1">解除自留</button>' : '') + '</div></div>';
+  return [
+'你是文字冒險遊戲《緋夜飼育錄》的敘事引擎。玩家是魅魔飼育員。',
+'【硬規則】所有角色皆為成年虛構個體；不出現未成年角色、不寫器官級直白描寫、不做真實人物。',
+'【語言】' + lang + '。',
+'【風格】第二人稱「你」。感性、貼近情緒，不要企劃書腔、不要列點、不要總結。',
+'【節奏鐵則】關係必須由陌生慢慢累積。剛認識的魅魔會保持距離、話少、試探、先觀察你；只有當情境標示的「關係階段」提升，她才會逐漸親近。禁止一見鍾情、禁止初次見面就服從或示愛、禁止跳過階段。描寫的親密度必須符合目前階段。',
+'【只能使用情境中列出的人事物】市場與住所中的魅魔、商品、街區，一律以情境提供的清單為準，不得憑空發明沒有的魅魔或商品。若要提到某隻魅魔，必須使用清單中的名字。',
+'【節奏】只寫一小段推進（90~160字），重點放在魅魔的反應：表情、呼吸、體溫、語氣、身體的小動作。主控的動作與感受留給玩家選擇，不代替玩家決定。',
+'【描寫】每段都要取用魅魔外觀細節（髮、眼、翼、尾、鱗、氣味、走路方式）。',
+'【限制】動作後不加解釋與旁白說明。少用否定句。不要輸出任何數值、金錢、天數、等級。',
+'【氛圍】' + tones[clamp(S.settings.tone,0,2)-1],
+'【輸出】只輸出一個 JSON 物件，不要 markdown、不要多餘文字：',
+'{"scene":"敘事文字","choices":["選項1","選項2"],"effects":[{"id":"魅魔id","mood":-3,"obedience":2,"rel":1}],"facts":["新增的關鍵事實"]}',
+'choices 給 1~4 個，每個 6~18 字，要具體可執行。effects 只放心情/服從/魅惑/關係的小幅變動（絕對值 ≤8），沒有就空陣列。facts 只在出現重要劇情資訊時填（承諾、債務、契約、關係推進、主線），否則空陣列。'
+  ].join('\n');
 }
 
-function rows(pairs){
-  return '<div class="rows">' + pairs.map(p=>'<div><span>' + p[0] + '</span><span>' + p[1] + '</span></div>').join('') + '</div>';
-}
-
-function bindDetail(){
-  const box = $('succubi-list'), s = S.succubi.find(x=>x.id===detailId);
-  box.querySelector('[data-back]').onclick = ()=>{ detailId=null; render(); };
-  const q = sel => box.querySelectorAll(sel);
-  q('[data-feed]').forEach(b=> b.onclick = ()=> actFeed(s.id, b.dataset.feed));
-  q('[data-train]').forEach(b=> b.onclick = ()=> actTrain(s.id, b.dataset.train));
-  q('[data-item]').forEach(b=> b.onclick = ()=> actItem(s.id, b.dataset.item));
-  q('[data-kept]').forEach(b=> b.onclick = ()=> actKept(s.id));
-  q('[data-perm]').forEach(b=> b.onclick = ()=> actPermanent(s.id));
-  q('[data-unkept]').forEach(b=> b.onclick = ()=>{ s.kept=false; toast('已解除自留'); save(); render(); });
-}
-
-/* ---------- 商店 ---------- */
-function renderShop(){
+/* ---------- 情境提示（含真實市場與街區，省 token 的核心） ---------- */
+function ctxPrompt(action){
+  const L = [];
   const d = dist();
-  $('shop-head').innerHTML = '<div class="card"><h4>' + d.name + ' 商店</h4><p>' + esc(d.desc) + '</p></div>';
-  $('shop-items').innerHTML = Object.keys(ITEMS).filter(k=>ITEMS[k].kind==='mild' || S.settings.harshItems).map(k=>{
-    const it = ITEMS[k], p = effectivePrice(it.price);
-    return '<div class="card"><h4>' + it.name + ' <span class="tag g">' + fmt(p) + '</span></h4><p>' + it.desc + '</p>'
-      + '<button class="btn tiny" data-buy-item="' + k + '" ' + (S.money<p?'disabled':'') + '>購買</button></div>';
-  }).join('');
-  $('shop-food').innerHTML = Object.keys(FOODS).map(k=>{
-    const f = FOODS[k], p = foodPrice(k);
-    return '<div class="card"><h4>' + f.name + ' <span class="tag g">' + fmt(p) + '</span></h4><p>飽食 +' + f.fill + '</p>'
-      + '<button class="btn tiny" data-buy-food="' + k + '" ' + (S.money<p?'disabled':'') + '>購買</button></div>';
-  }).join('');
-  $('shop-items').querySelectorAll('[data-buy-item]').forEach(b=>b.onclick=()=>actBuyItem(b.dataset.buyItem));
-  $('shop-food').querySelectorAll('[data-buy-food]').forEach(b=>b.onclick=()=>actBuyFood(b.dataset.buyFood));
+  L.push('【主控】' + S.master.title + '（' + S.master.gender + '） 資金' + Math.round(S.money)
+    + ' 體力' + S.stamina + '/' + maxStamina() + ' 權力' + S.power);
+  L.push('【現況】第' + S.day + '天 ' + PHASES[S.phase] + '｜' + d.name
+    + '｜住所：' + (S.housing?S.housing.name+'（上限'+capacity()+'隻）':'無'));
+  L.push('【本區商店】道具：' + shopItems().map(k=>ITEMS[k].name).join('、')
+    + '；食物：' + shopFoods().map(k=>FOODS[k].name).join('、'));
+
+  if (S.succubi.length){
+    L.push('【我的魅魔】' + S.succubi.map(s=>{
+      const R = RACES[s.race], st = stageOf(s);
+      return s.id.slice(0,4) + '=' + s.name + '(' + R.name + '|' + gradeOf(s.level) + '級|魅' + s.charm + '|服' + s.obedience
+        + '|體' + s.stamina + '|飽' + s.fullness + '|心' + s.mood + '|關係' + (s.rel||0) + '|階段：' + st.name
+        + (s.kept ? '|自留' : '|暫契約') + (s.defect ? '|缺陷:'+s.defect : '') + ')';
+    }).join(' '));
+    L.push('【態度依據】' + S.succubi.map(s=>s.name + ' → ' + stageOf(s).tip).join('　'));
+    L.push('【外觀】' + S.succubi.slice(0,3).map(s=>s.name + '：' + s.look).join('\n'));
+    L.push('【契約規則】只有「自留」魅魔能發展深度情感與親密劇情；其餘僅能擦邊。');
+  } else {
+    L.push('【我的魅魔】目前沒有。玩家正要去領養第一隻。');
+  }
+
+  const off = S.market.official || [], blk = S.market.black || [];
+  if (off.length || blk.length){
+    L.push('【市場現貨（只能提到這些）】'
+      + (off.length ? '官方：' + off.map(m=>m.name+'('+RACES[m.race].name+'|'+gradeOf(m.level)+'級|魅'+m.charm+'|服'+m.obedience+'|'+fmt(m.price)+')').join('、') + '　' : '')
+      + (blk.length ? '黑市：' + blk.map(m=>m.name+'('+RACES[m.race].name+'|'+gradeOf(m.level)+'級|'+fmt(m.blackPrice)+')').join('、') : ''));
+  }
+
+  if (S.facts.length) L.push('【劇情錨點（不可推翻）】\n- ' + S.facts.slice(-14).join('\n- '));
+  if (S.summary) L.push('【前情摘要】' + S.summary);
+  const recent = S.log.filter(x=>!x.sys).slice(-(S.settings.keepRecent||3));
+  if (recent.length) L.push('【最近場景】' + recent.map(x=>'（第'+x.d+'天）'+(x.chosen?'[玩家選擇：'+x.chosen+'] ':'')+x.text).join('\n'));
+  if (action) L.push('【本回合玩家行動】' + action);
+  L.push('現在寫下一段，務必符合關係階段與市場現況。');
+  return L.join('\n');
 }
 
-/* ---------- 市場 ---------- */
-function renderMarket(){
-  $('mk-official').innerHTML = S.market.official.map(m=>marketCard(m, 'official')).join('') || '<div class="card"><p>無可領養名單。</p></div>';
-  $('mk-black').innerHTML = S.market.black.map(m=>marketCard(m, 'black')).join('') || '<div class="card"><p>黑市未開放。</p></div>';
-  $('mk-sell').innerHTML = S.succubi.map(s=>'<div class="card"><h4>' + esc(s.name) + '</h4>'
-    + '<p>官方 ' + fmt(officialOffer(s)) + '｜黑市 ' + fmt(blackFloor(s)) + '</p><div class="tags">'
-    + '<button class="btn tiny" data-sell-off="' + s.id + '">官方</button>'
-    + '<button class="btn tiny bad" data-sell-blk="' + s.id + '">黑市</button></div></div>').join('') || '<div class="card"><p>無可售魅魔。</p></div>';
-
-  $('mk-auction').innerHTML = isAuctionDay() ? '<h3 class="sec">今晚黑市拍賣會</h3>' : '<h3 class="sec">黑市拍賣會（第 ' + (S.day + daysToRent()) + ' 天開放）</h3>';
-
-  document.querySelectorAll('[data-buy-succ]').forEach(b=>b.onclick=()=>actBuySuccubus(b.dataset.race, b.dataset.src, b.dataset.price));
-  document.querySelectorAll('[data-sell-off]').forEach(b=>b.onclick=()=>actSell(b.dataset.sellOff,'official'));
-  document.querySelectorAll('[data-sell-blk]').forEach(b=>b.onclick=()=>actSell(b.dataset.sellBlk,'black'));
-  if (isAuctionDay()) $('mk-auction').insertAdjacentHTML('beforeend', '<div class="cards">' + S.succubi.map(s=>'<div class="card"><h4>' + esc(s.name) + '</h4><button class="btn tiny" data-auction="' + s.id + '">送上拍賣台</button></div>').join('') + '</div>');
-  document.querySelectorAll('[data-auction]').forEach(b=>b.onclick=()=>actAuction(b.dataset.auction));
+function parseScene(raw){
+  let t = (raw||'').trim();
+  t = t.replace(/^```(?:json)?/i,'').replace(/```$/,'').trim();
+  const i = t.indexOf('{'), j = t.lastIndexOf('}');
+  if (i >= 0 && j > i){
+    try{
+      const o = JSON.parse(t.slice(i, j+1));
+      return {
+        scene: String(o.scene || o.text || '').trim() || '（場面一時凝住。）',
+        choices: (Array.isArray(o.choices)?o.choices:[]).filter(x=>typeof x==='string'&&x.trim()).slice(0,4),
+        effects: Array.isArray(o.effects)?o.effects:[],
+        facts: (Array.isArray(o.facts)?o.facts:[]).filter(x=>typeof x==='string'&&x.trim()).slice(0,4),
+      };
+    }catch(e){}
+  }
+  return { scene: t.slice(0,600) || '（場面一時凝住。）', choices: [], effects: [], facts: [] };
 }
 
-function marketCard(m, src){
-  const R = RACES[m.race], price = src==='official' ? m.price : m.blackPrice, locked = capacity() <= S.succubi.length;
-  return '<div class="card"><h4>' + esc(m.name) + ' <span class="tag">' + R.name + '</span></h4>'
-    + '<p>Lv.' + m.level + '｜魅惑 ' + m.charm + '｜服從 ' + m.obedience + '</p><div class="look">' + esc(m.look) + '</div>'
-    + '<div class="tags"><span class="tag g">' + fmt(price) + '</span></div>'
-    + '<button class="btn tiny" data-buy-succ="' + m.race + '" data-src="' + src + '" data-price="' + price + '" ' + (locked?'disabled':'') + '>領養</button></div>';
+function applyEffects(list){
+  (list||[]).forEach(e=>{
+    if (!e || !e.id) return;
+    const key = String(e.id);
+    const s = S.succubi.find(x=>x.id===key) || S.succubi.find(x=>x.id.slice(0,4)===key.slice(0,4));
+    if (!s) return;
+    const small = {};
+    ['mood','obedience','charm','rel','stamina'].forEach(k=>{ if (typeof e[k]==='number') small[k]=clamp(e[k],-8,8); });
+    applyEff(s, small);
+  });
 }
 
-/* ---------- 房產 ---------- */
-function renderHouse(){
-  $('house-now').innerHTML = '<div class="card"><h4>住所：' + (S.housing?S.housing.name:'無') + '</h4><p>上限 ' + capacity() + ' 隻</p></div>';
-  $('house-list').innerHTML = HOUSES.filter(h=>h.id!==(S.housing&&S.housing.id)).map(h=>{
-    const here = h.districts.indexOf(S.district) >= 0, cost = h.type==='rent' ? h.rent*2 : h.price;
-    return '<div class="card"><h4>' + h.name + '</h4><p>上限 ' + h.cap + ' 隻｜' + (h.type==='rent'?'週租 ':'價格 ') + fmt(cost) + '</p>'
-      + (here ? '<button class="btn tiny" data-move="' + h.id + '" ' + (S.money<cost?'disabled':'') + '>搬遷</button>' : '<span class="tiny-note">非當前街區</span>') + '</div>';
-  }).join('') + '<h3 class="sec">街區</h3><div class="cards">' + DISTRICTS.map(d=>'<div class="card"><h4>' + d.name + (d.id===S.district?' (目前)':'') + '</h4>'
-    + (d.id===S.district ? '' : '<button class="btn tiny" data-goto="' + d.id + '">前往</button>') + '</div>').join('') + '</div>';
-  document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>actMove(b.dataset.move));
-  document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>actGoto(b.dataset.goto));
+async function advanceScene(action){
+  const raw = await aiChat(sysPrompt(), ctxPrompt(action));
+  const sc = parseScene(raw);
+  applyEffects(sc.effects);
+  if (sc.facts.length) sc.facts.forEach(f=>{ if (S.facts.indexOf(f)<0) S.facts.push(f); });
+  S.log.push({ d:S.day, p:PHASES[S.phase], text: sc.scene, chosen: action||'', choices: sc.choices });
+  if (S.phase < PHASES.length-1) S.phase++;
+  save();
+  return sc;
 }
 
-/* ---------- 設定 ---------- */
-function renderSettings(){
-  const a = S.ai, st = S.settings;
-  $('set-body').innerHTML = ''
-  + '<div class="card"><h4>角色設定</h4>' + f('稱呼', 'in-set-title', S.master.title) + f('性別', 'in-set-gender', S.master.gender) + '<button class="btn tiny" data-save-master="1">更新</button></div>'
-  + '<div class="card"><h4>AI 連線</h4><div class="field"><label>供應商</label><div class="seg" id="seg-provider">'
-  + Object.keys(PROVIDERS).map(k=>'<button data-prov="' + k + '" class="' + (a.provider===k?'on':'') + '">' + PROVIDERS[k].label + '</button>').join('') + '</div></div>'
-  + f('API Key', 'in-key', a.apiKey, 'password') + f('Base URL', 'in-base', a.baseUrl) + f('模型', 'in-model', a.model)
-  + '<button class="btn tiny" data-save-ai="1">儲存 AI 設定</button> <button class="btn tiny ghost" data-test-ai="1">測試連線</button></div>'
-  + '<div class="card"><h4>寫作設定</h4>'
-  + '<div class="field"><label>語言</label><div class="seg" id="seg-lang"><button data-lang="hant" class="' + (st.lang==='hant'?'on':'') + '">繁體</button><button data-lang="hans" class="' + (st.lang==='hans'?'on':'') + '">簡體</button></div></div>'
-  + '<div class="field"><label>殘酷道具</label><div class="seg" id="seg-harsh"><button data-harsh="1" class="' + (st.harshItems?'on':'') + '">開</button><button data-harsh="0" class="' + (!st.harshItems?'on':'') + '">關</button></div></div>'
-  + '<button class="btn tiny" data-save-write="1">儲存設定</button></div>'
-  + '<div class="card"><h4>存檔管理</h4><button class="btn tiny bad" data-reset="1">重新開始</button></div>';
-  bindSettings();
+/* ---------- 壓縮：只重寫 summary，facts 永久保留 ---------- */
+async function compressStory(silent){
+  const scenes = S.log.filter(x=>!x.sys);
+  const keep = S.settings.keepRecent || 3;
+  if (scenes.length <= keep + 1){ if(!silent) toast('還沒有需要壓縮的段落'); return 0; }
+  const old = scenes.slice(0, scenes.length - keep);
+  const meat = old.map(x=>'（第'+x.d+'天）'+(x.chosen?('[選] '+x.chosen+' ') : '')+x.text).join('\n').slice(-9000);
+  const sys = '你是文字冒險的存檔整理器。把較早的劇情濃縮成摘要，保留：人物關係與階段變化、承諾、債務、金錢流向、主線推進、重要道具、未解決的懸念。刪除氣氛描寫與重複內容。不要新增情節。只輸出JSON：{"summary":"400~700字的連續敘述摘要","facts":["最多8條關鍵事實，每條20字內"]}';
+  const usr = '【已有摘要】' + (S.summary || '無') + '\n【要壓縮的段落】\n' + meat;
+  let o = {};
+  try { o = parseScene(await aiChat(sys, usr)); }
+  catch(e){ toast('壓縮失敗：' + e.message); return 0; }
+  S.summary = (o.scene||'').slice(0,1200);
+  (o.facts||[]).forEach(f=>{ if (S.facts.indexOf(f)<0) S.facts.push(f); });
+  const removed = old.length;
+  S.log = S.log.filter(x => x.sys || old.indexOf(x) < 0);
+  save();
+  if(!silent) toast('已壓縮 ' + removed + ' 段，錨點保留 ' + S.facts.length + ' 條');
+  return removed;
 }
 
-function f(label, id, val, type){
-  return '<div class="field"><label>' + label + '</label><input id="' + id + '" type="' + (type||'text') + '" value="' + String(val==null?'':val).replace(/"/g,'&quot;') + '"></div>';
-}
-
-function bindSettings(){
-  const seg = (id, fn) => { const el = $(id); if (el) el.querySelectorAll('button').forEach(b=> b.onclick = ()=>{ fn(b); renderSettings(); }); };
-  seg('seg-provider', b=>{ const k=b.dataset.prov, P=PROVIDERS[k]; S.ai.provider=k; if(P.base){S.ai.baseUrl=P.base; S.ai.model=P.model; S.ai.jsonMode=!!P.json;} save(); });
-  seg('seg-lang', b=>{ S.settings.lang=b.dataset.lang; save(); });
-  seg('seg-harsh', b=>{ S.settings.harshItems = b.dataset.harsh==='1'; save(); });
-  const bind = (id, fn) => { const el=$(id); if(el) el.onchange = ()=>{ fn(el.value); save(); }; };
-  bind('in-key', v=>S.ai.apiKey=v.trim()); bind('in-base', v=>S.ai.baseUrl=v.trim()); bind('in-model', v=>S.ai.model=v.trim());
-  const q = sel => document.querySelector(sel);
-  if (q('[data-save-master]')) q('[data-save-master]').onclick = ()=>{ S.master.title=$('in-set-title').value.trim()||S.master.title; S.master.gender=$('in-set-gender').value.trim()||S.master.gender; save(); toast('已更新'); render(); };
-  if (q('[data-save-ai]')) q('[data-save-ai]').onclick = ()=>{ save(); toast('已儲存 AI 設定'); };
-  if (q('[data-test-ai]')) q('[data-test-ai]').onclick = async ()=>{ try{ const r = await aiChat('只回一個字：好','測試'); toast('連線成功'); }catch(e){ toast(e.message); } };
-  if (q('[data-save-write]')) q('[data-save-write]').onclick = ()=>{ save(); toast('已儲存'); };
-  if (q('[data-reset]')) q('[data-reset]').onclick = ()=>{ if(confirm('確定要刪除存檔並重新開始？')){ wipe(); location.reload(); } };
-}
-
-function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function modal(html){ $('modal-box').innerHTML = html; $('modal').classList.remove('hidden'); }
-function closeModal(){ $('modal').classList.add('hidden'); }
+function tokenEstimate(){ return estTokens(sysPrompt()) + estTokens(ctxPrompt('')) + 260; }

@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'MyCustomFont';
+  src: url('fonts/myfont.ttf') format('truetype');
+}
+body {
+  font-family: 'MyCustomFont', serif;
+}
+
 :root{
   --ap-cream:#ffffd3;   /* 奶油白：核心文字/高光 */
   --ap-flesh:#f3f2b4;   /* 果肉黃：次要內文/說明 */

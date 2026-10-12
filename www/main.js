@@ -1,18 +1,18 @@
 /* ==========================================================
-   動作層：遊戲邏輯與交互
+   動作層：遊戲邏輯與交互控制
    ========================================================== */
 
 function resetToSetup(){
   var b = $('boot'); if (!b) return;
   b.classList.remove('off');
   b.innerHTML = '<div style="width:88%;max-width:420px">'
-  + '<h2 style="color:#e08aa3;letter-spacing:.1em;text-align:center;margin:0 0 4px">緋夜飼育錄</h2>'
-  + '<p style="color:#9b8fa6;font-size:12px;text-align:center;margin-bottom:18px">飼育員登記表</p>'
+  + '<h2 style="color:var(--ap-cream);letter-spacing:.1em;text-align:center;margin:0 0 4px">緋夜飼育錄</h2>'
+  + '<p style="color:var(--ap-flesh);font-size:12px;text-align:center;margin-bottom:18px">蘋果誘惑 · 飼育員登記表</p>'
   + '<div class="field"><label>你的稱呼（魅魔怎麼叫你）</label><input id="b-title" value="主人"></div>'
   + '<div class="field"><label>你的性別</label><div class="seg" id="b-gender">'
   + '<button data-g="男性">男性</button><button data-g="女性" class="on">女性</button><button data-g="不指定">不指定</button></div></div>'
   + '<div class="field"><label>你的名字（敘事用，可留空）</label><input id="b-name" placeholder="留空則以稱呼代替"></div>'
-  + '<p style="font-size:11.5px;color:#9b8fa6;line-height:1.7">起始資金 ₡4,800，住在舊港區的廉租單間（週租 ₡350）。'
+  + '<p style="font-size:11.5px;color:var(--ap-flesh);line-height:1.7;opacity:.9">起始資金 ₡4,800，住在舊港區的廉租單間（週租 ₡350）。'
   + '領養與飼育生活即將展開，你們將從完全陌生開始。</p>'
   + '<button class="btn" id="b-start" style="width:100%;margin-top:8px">開始經營飼育所</button></div>';
 
@@ -71,7 +71,7 @@ async function choose(c){
   setBusy(false); if (window.render) window.render();
 }
 
-/* 確切執行購買魅魔（扣款＋將魅魔加入背包團隊） */
+/* 確切執行購買魅魔（與彈窗確認對接） */
 window.executeBuySuccubus = async function(m, src){
   var price = src==='official' ? m.price : m.blackPrice;
   if (S.succubi.length >= capacity()){ toast('住所已滿，先搬家或販售魅魔'); return; }
@@ -84,9 +84,11 @@ window.executeBuySuccubus = async function(m, src){
 
   var defect = null;
   if (src==='black' && Math.random() < 0.34) defect = pick(DEFECTS).id;
-  var s = rollSuccubus(m.race, { name:m.name, persona:m.persona, level:m.level, defect:defect, look:m.look });
+  var s = rollSuccubus(m.race, { name:m.name, persona:m.persona, hiddenBias:m.hiddenBias, level:m.level, defect:defect, look:m.look });
   s.charm = m.charm; s.obedience = m.obedience;
   S.succubi.push(s);
+  
+  gainMasterExp(30);
   S.facts.push('第' + S.day + '天 ' + (src==='official'?'官方':'黑市') + '購入魅魔 ' + s.name + '（' + RACES[s.race].name + '）');
 
   toast('成功購入 ' + s.name + '（-' + fmt(price) + '）');
@@ -95,7 +97,7 @@ window.executeBuySuccubus = async function(m, src){
   if (S.ai && S.ai.apiKey){
     setBusy(true, 'AI 正在寫入交易劇情…');
     try{
-      await advanceScene('我付清了 ' + fmt(price) + '，正式買下了 ' + s.name + '。這是我們剛完成交割並準備一起離開的場景。');
+      await advanceScene('我付清了 ' + fmt(price) + '，正式買下了 ' + s.name + '。這是我們剛完成交割並準備一起離開的場景，彼此還很陌生。');
     }catch(e){ toast(e.message); }
     setBusy(false); if (window.render) window.render();
   }
@@ -115,6 +117,19 @@ function actBuyFood(k){
   toast('購入 ' + FOODS[k].name + '（-' + fmt(p) + '）'); flashScreen(); save(); if (window.render) window.render();
 }
 
+function actFeedSpecial(sid, fid){
+  var s = S.succubi.find(function(x){ return x.id===sid; }); if(!s) return;
+  var f = FOODS[fid];
+  if (f && f.isSpecial){
+    var costStam = f.staminaCost || 15;
+    if (S.stamina < costStam){ toast('主控體力不足 (' + costStam + ')'); return; }
+    S.stamina -= costStam;
+    var log = applyEff(s, { fullness: Math.round(f.fill * 1.5), mood: 12, rel: 3 }, 1);
+    toast(s.name + ' 吸取體液：' + log); flashScreen();
+    save(); if (window.render) window.render();
+  }
+}
+
 function actKept(sid){
   var s = S.succubi.find(function(x){ return x.id===sid; }); if (!s) return;
   S.succubi.forEach(function(x){ x.kept=false; });
@@ -126,7 +141,9 @@ function actKept(sid){
 
 function actPermanent(sid){
   var s = S.succubi.find(function(x){ return x.id===sid; }); if (!s) return;
-  if ((s.rel||0) < 60){ toast('關係需達 60（目前 ' + (s.rel||0) + '）'); return; }
+  var rank = masterRankInfo();
+  var req = rank.contractRelReq || 60;
+  if ((s.rel||0) < req){ toast('關係需達 ' + req + '（目前 ' + (s.rel||0) + '）'); return; }
   s.contract = 'permanent';
   S.facts.push(s.name + ' 與主人簽下永久契約（第' + S.day + '天）');
   toast(s.name + ' 簽下永久契約'); flashScreen();
@@ -172,7 +189,7 @@ function doSleep(){
   endDay(); save();
   if (S.flags.gameOver){
     if (window.render) window.render();
-    modal('<h3>破產</h3><p>資金見底，飼育所無法維持營運。<br><br>這一輪遊戲到此結束。</p>'
+    modal('<h3>破產了</h3><p>資金見底，飼育所無法維持營運。<br><br>這一輪誘惑之旅到此結束。</p>'
       + '<button class="btn" onclick="closeModal()">知道了</button>');
     return;
   }

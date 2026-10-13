@@ -87,14 +87,16 @@ function recordTurn(userText, narrative) {
   }
 }
 
-function buildHistoryMessages() {
+/* 把前情拼成一段「前情回顧」文字，塞進系統提示（不要用 assistant 訊息夾帶，免得 AI 模仿純文字忘了 JSON） */
+function buildHistoryText() {
   const h = ensureHistory();
-  const msgs = [];
-  for (const e of h) {
-    if (e.u) msgs.push({ role: "user", content: e.u });
-    if (e.a) msgs.push({ role: "assistant", content: e.a });
-  }
-  return msgs;
+  if (!h.length) return "";
+  const lines = h.map((e, i) => {
+    const u = e.u ? `玩家：「${e.u}」` : "";
+    const a = e.a ? `敘事：「${e.a}」` : "";
+    return `${i + 1}. ` + [u, a].filter(Boolean).join("　");
+  }).join("\n");
+  return "\n【前情回顧（這是你先前回合的輸入與你先前寫出的敘事，僅供承接上下文、保持姿勢與動作連貫；它不是輸出範例，無論如何你「只能」輸出一個 JSON 物件）】\n" + lines;
 }
 
 /* ---------- 系統 Prompt ---------- */
@@ -122,6 +124,7 @@ function buildSystemPrompt() {
   const dirs = getDirectives();
   const directiveText = dirs.length ? dirs.map((d, i) => `${i + 1}. ${d}`).join("\n") : "（無）";
   const factsText = (S.facts && S.facts.length) ? "\n【玩家已知事實】" + S.facts.join("；") : "";
+  const historyText = buildHistoryText();
 
   return `你是《緋夜飼育錄》的敘事引擎，一款成人向（18+ 氛圍）魅魔飼育文字遊戲的旁白。
 你「只能」輸出一個合法的 JSON 物件。回應的第一個字元必須是 {，最後一個字元必須是 }。
@@ -164,7 +167,7 @@ ${succText}
   （重逢時送 "present":true）
 
 【承接前情（極重要，務必嚴格遵守）】
-- 對話紀錄中，上一則 assistant 訊息的內容，就是「此刻正在發生的畫面」。你必須嚴格承接它的姿勢、動作與進行中的事，不得與之矛盾、不得無故重置。
+- 「前情回顧」中最後一則敘事，就是「此刻正在發生的畫面」。你必須嚴格承接它的姿勢、動作與進行中的事，不得與之矛盾、不得無故重置。
 - 例：上一則她「跪在你腳邊、把蒼白的手腕伸到你唇前」——那麼這一則開頭，她仍跪著、手腕仍伸著，除非玩家這次輸入明確叫她站起或收手。
 - 例：前文是「她把純血的手腕給你吸食」，玩家說「吃吧」——那是繼續飲她的血：寫你低頭含住她的手腕、血的氣味與滋味，而不是憑空端出食物。
 - 不要讓角色無緣無故站起、換姿勢、離場，除非有明確的劇情原因，或玩家這次輸入直接促成。
@@ -213,6 +216,7 @@ ${itemText}
 
 【長期指令（務必長期遵守，直到玩家下指令撤除）】
 ${directiveText}
+${historyText}
 ${factsText}`;
 }
 
@@ -293,6 +297,27 @@ function salvagePartial(t) {
   return { narrative: out, choices: choices, commands: [] };
 }
 
+/* 純文字救援：AI 偶爾忘了 JSON、直接吐正文時，把正文當敘事用，別整段丟掉 */
+function salvagePlainNarrative(t) {
+  let s = String(t || "").trim();
+  if (!s) return null;
+  // 去掉開頭的場景行「── … ──」（遊戲會自己補）
+  s = s.replace(/^\s*──[^\n]*?──[ \t]*\n?/, "").trim();
+  // 若結尾是「你想怎麼做？」等選項提示，截斷於此
+  const cut = s.search(/你想怎麼做|你要怎麼做|接下來怎麼做|你想如何做/);
+  if (cut !== -1) s = s.slice(0, cut).trim();
+  // 若某行開頭是 A. B. C. D. 選項，截斷於第一個這類行
+  const lines = s.split("\n");
+  const out = [];
+  for (const ln of lines) {
+    if (/^[A-Da-d][\.、．]\s/.test(ln.trim())) break;
+    out.push(ln);
+  }
+  s = out.join("\n").trim();
+  if (!s) return null;
+  return { narrative: s, choices: [], commands: [] };
+}
+
 function parseAIJson(text) {
   if (!text) return null;
   const t = String(text).trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
@@ -301,7 +326,9 @@ function parseAIJson(text) {
   try { const j = JSON.parse(objText); if (j && (j.narrative || (Array.isArray(j.choices) && j.choices.length))) return j; } catch (_) {}
   try { const j = JSON.parse(escapeCtrlInStrings(objText)); if (j && (j.narrative || (Array.isArray(j.choices) && j.choices.length))) return j; } catch (_) {}
 
-  return salvagePartial(t);
+  const partial = salvagePartial(t);
+  if (partial) return partial;
+  return salvagePlainNarrative(t);
 }
 
 /* ---------- 呼叫外部 AI ---------- */
@@ -321,7 +348,6 @@ async function callStoryAI(userText) {
   const url = normalizeApiUrl(cfg.url);
   const messages = [
     { role: "system", content: buildSystemPrompt() },
-    ...buildHistoryMessages(),
     { role: "user", content: userText }
   ];
 

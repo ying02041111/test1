@@ -3,6 +3,7 @@
    ============================================================ */
 
 const API_SETTINGS_KEY = "ck_api_settings_v1";
+const DIRECTIVES_KEY = "ck_directives_v1";
 const API_DEFAULTS = { key: "", url: "", model: "", thinking: false, reasoningEffort: "high", temperature: 0.9, topP: 1.0 };
 
 function getApiSettings() {
@@ -15,6 +16,13 @@ function getApiSettings() {
 }
 
 function persistApiSettings(cfg) { localStorage.setItem(API_SETTINGS_KEY, JSON.stringify(cfg || {})); }
+
+/* 長期指令（ps. 指令） */
+function getDirectives() {
+  try { return JSON.parse(localStorage.getItem(DIRECTIVES_KEY) || "[]"); }
+  catch (e) { return []; }
+}
+function setDirectives(arr) { localStorage.setItem(DIRECTIVES_KEY, JSON.stringify(arr || [])); }
 
 function normalizeApiUrl(url) {
   let u = String(url || "").trim();
@@ -52,7 +60,6 @@ async function sendChat(url, cfg, messages, maxTokens) {
 
   let res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
   if (!res.ok) {
-    // 相容不認 thinking 欄位的服務：拿掉後再試一次
     const res2 = await fetch(url, { method: "POST", headers, body: JSON.stringify(base) });
     if (res2.ok || res2.status !== res.status) return res2;
   }
@@ -83,6 +90,9 @@ function buildSystemPrompt() {
 
   const itemText = ownedItemNames().length ? ownedItemNames().join("、") : "（無）";
   const personaText = m.persona ? m.persona : "（未設定，請自行揣摩主人形象）";
+
+  const dirs = getDirectives();
+  const directiveText = dirs.length ? dirs.map((d, i) => `${i + 1}. ${d}`).join("\n") : "（無）";
   const factsText = (S.facts && S.facts.length) ? "\n【玩家已知事實】" + S.facts.join("；") : "";
 
   return `你是《緋夜飼育錄》的敘事引擎，一款成人向（18+ 氛圍）魅魔飼育文字遊戲的旁白。
@@ -99,13 +109,22 @@ function buildSystemPrompt() {
 【時間與地點】
 當前時間：${nowText}；地點：${locName}。
 - 敘事開頭用一行場景（時間·地點），必須與上列完全一致。
-- 地點要有具體描述：街景、光線、氣味、聲響。
 
 【文風】
 - 感官化、文學化、露骨暗示但絕不粗俗，不寫直白的生殖器名詞。
 - 以第二人稱「你」展開。
 - 對白要標註說話者與語氣：名字：（語氣）「對白」，例如 緋音：（小聲）「……嗯。」
-- 親密場景可寫肌膚、體溫、氣味、顫抖、壓抑的喘息；日常場景則寫環境與互動。
+- 親密場景可寫肌膚、體溫、氣味、顫抖、壓抑的喘息。
+
+【對話與環境的比例（重要）】
+- 以「對白」為骨幹：讓角色多說話、多互動，對白要佔敘事的主要篇幅。
+- 環境描述點到為止即可，比一般寫法再精簡約兩三成，不要長篇寫景。
+- 例外：若該角色設定為「沉默寡言」，才可以對白稀少、改以動作與氛圍為主。
+
+【玩家輸入的判讀（重要）】
+- 玩家直接輸入的文字，預設是「對話」（角色在對你說話）。
+- 若輸入含括號（…），括號內是「動作」。
+- 不論是對話、動作、或兩者同時，你都要回應：針對玩家的話給出對白回應，並把動作確實執行、讓場景前進（例如「走吧（前往市集）」→ 要回應那句話，並讓場景真的移動到市集）。先後順序不拘。
 
 【寫作範例（僅格式參考，勿照抄內容）】
 ── 第 9 日 · 上午 · 霓虹港 ──
@@ -141,6 +160,9 @@ ${itemText}
 【指令】
 - commands 可選填：{"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"stress":0,"hunger":0}}、{"type":"item","itemId":"...","succubusId":"..."}、{"type":"time","phases":1}、{"type":"gold","amount":0}、{"type":"hp","amount":0}、{"type":"exp","amount":0}。
 - 數值變動幅度宜小（單項 -5 ~ +5）。使用道具時 itemId 必須在上列背包中。
+
+【長期指令（務必長期遵守，直到玩家下指令撤除）】
+${directiveText}
 ${factsText}`;
 }
 
@@ -316,28 +338,28 @@ const MOCK_SCENES = {
     "夜風從窗縫漏進來，混著舊城石牆的潮氣與遠處攤販的油香。你還沒有一隻屬於自己的魅魔，這份寂靜，該被打破了。"
   ],
   hungerHigh: [
-    "{name} 偎在你腳邊，腹部傳出一聲細響。她抬眼望你，眼裡濕漉漉的。\n{name}：（小聲）「主人……我餓了。」",
-    "她的尾尖無精打采地垂著，鼻尖朝你的方向一下一下地嗅。\n{name}：（帶著鼻音）「你身上的味道……好香。」"
+    "{name} 偎在你腳邊，腹部傳出一聲細響。\n{name}：（抬眼）「主人……我餓了。」",
+    "她的尾巴無精打采地垂著。\n{name}：（帶著鼻音）「你身上的味道……好香。」"
   ],
   stressHigh: [
-    "{name} 的肩膀繃得像張滿的弓。她避開你的視線，緊抿的唇卻藏不住顫抖。",
-    "你走近時，{name} 的背脊僵了一下，像一頭受驚的困獸。\n{name}：（低聲）「……別過來。」"
+    "{name} 的肩膀繃得像張滿的弓。\n{name}：（別開臉）「……我沒事。」",
+    "{name} 縮了縮肩，指尖絞在一起。\n{name}：（低聲）「……別過來。」"
   ],
   guarded: [
-    "{name} 與你隔著一臂的距離，像一道看不見的防線。她眼裡的戒備還沒化開。",
-    "她沒有靠近，只拿那雙眼睛冷冷地望你。你越前進一步，她就越往後縮一寸。"
+    "{name} 與你隔著一步的距離。\n{name}：（抬眼）「有什麼事？」",
+    "{name} 沒靠近，只拿那雙眼睛冷冷地望你。\n{name}：「……」"
   ],
   intimate: [
-    "{name} 主動蹭進你的掌心，{scent}纏上你的呼吸。破冰之後，她的親暱像融化的蜜。",
-    "她仰起臉，{appearance}。此刻的她不再設防，眼裡的柔軟幾乎要把你溺進去。"
+    "{name} 蹭進你的掌心。\n{name}：（輕聲）「你回來了。」",
+    "她仰起臉看你。\n{name}：（笑）「今天想我了嗎？」"
   ],
   permanent: [
-    "她頸間的契約痕隱隱發燙。永久之契已將她與你的命數綁在一起，她望向你時，眼底沉著只有歸處才有的篤定。",
-    "她安靜地偎在你懷裡，呼吸與你的心跳同頻。自那一夜以血為誓，她看你的眼神，便再沒有離開過。"
+    "她頸間的契約痕隱隱發燙。\n{name}：（篤定）「我一直都在。」",
+    "她安靜地偎在你懷裡。\n{name}：（低語）「別走。」"
   ],
   default: [
-    "夜色在窗外漫開，{name} 就這麼待在你身旁，{scent}若有似無地撩撥著你的神經。",
-    "你與 {name} 之間的空氣微微發燙。她正用一種你讀不透的眼神看著你。"
+    "{name} 待在你身旁。\n{name}：（看著你）「怎麼了？」",
+    "你與 {name} 之間的距離很近。\n{name}：（輕聲）「說吧。」"
   ]
 };
 

@@ -4,7 +4,6 @@
 
 function $(id) { return document.getElementById(id); }
 
-/* WebView 沒有 console，把錯誤直接印在畫面上 */
 function showErrorBox(msg) {
   try {
     const old = $("err-box");
@@ -17,9 +16,7 @@ function showErrorBox(msg) {
   } catch (_) {}
 }
 
-window.addEventListener("error", function (e) {
-  showErrorBox(e.message || "未知錯誤");
-});
+window.addEventListener("error", function (e) { showErrorBox(e.message || "未知錯誤"); });
 window.addEventListener("unhandledrejection", function (e) {
   const r = e.reason;
   showErrorBox("非同步錯誤：" + (r && r.message ? r.message : String(r)));
@@ -78,13 +75,16 @@ function bindEvents() {
   window.addEventListener("beforeunload", saveGame);
 }
 
-/* ---------- 互動 ---------- */
+/* ---------- 輸入 ---------- */
 function handleSendAction() {
   const field = $("story-input-field");
   if (!field) return;
   const text = field.value.trim();
   if (!text) return;
   field.value = "";
+
+  if (handlePsCommand(text)) return; // ps. 指令：不當作對話
+
   appendStoryMessage("player", text);
   proceed(text);
 }
@@ -92,6 +92,40 @@ function handleSendAction() {
 function handleChoiceClick(text) {
   appendStoryMessage("player", text);
   proceed(text);
+}
+
+/* ps. 開頭＝給 AI 的長期指令 */
+function handlePsCommand(text) {
+  const body = text.replace(/^\s*ps\s*[.。．:：,，]?\s*/i, "");
+  if (body === text) return false; // 不是 ps. 開頭
+
+  if (!body) { appendStoryMessage("system", "［指令］請在 ps. 後面寫下內容。"); return true; }
+
+  const list = getDirectives();
+
+  if (/刪除|移除|清除|取消|去掉/.test(body)) {
+    if (/全部|所有|一切|清空/.test(body) || /^清除$/.test(body)) {
+      setDirectives([]);
+      appendStoryMessage("system", "［指令］已清除所有長期指令。");
+    } else {
+      const last = list.pop();
+      setDirectives(list);
+      appendStoryMessage("system", last ? `［指令］已刪除：${last}` : "［指令］目前沒有可刪除的長期指令。");
+    }
+  } else {
+    list.push(body);
+    setDirectives(list);
+    appendStoryMessage("system", `［指令］已加入長期指令：${body}`);
+  }
+  return true;
+}
+
+/* 導覽關鍵字：開對應視窗，但「不中斷 AI 對白回應」 */
+function triggerNav(text) {
+  if (!text) return;
+  if (/道具店|商店|道具行/.test(text)) { openShopChoice(); return; }
+  if (/契約廳|官方契約|官方市場/.test(text)) { openMarket("official"); return; }
+  if (/黑市|暗巷/.test(text)) { openMarket("blackmarket"); return; }
 }
 
 function maybeUseItemByText(text) {
@@ -105,7 +139,7 @@ function maybeUseItemByText(text) {
 
 async function proceed(text) {
   try {
-    if (detectNav(text)) return;
+    triggerNav(text); // 動作（前往商店…）照做，但不影響下面的對白回應
 
     const itemId = maybeUseItemByText(text);
     if (itemId) consumeItemByStory(itemId);
@@ -116,12 +150,8 @@ async function proceed(text) {
     processAICommands(result);
 
     if (!S.currentChoices || !S.currentChoices.length) {
-      const fallback = mockNarrativeResponse(text);
-      if (fallback.narrative) {
-        appendStoryMessage("system", sceneHeader());
-        appendStoryMessage("story", fallback.narrative);
-      }
-      processAICommands({ commands: fallback.commands || [], choices: fallback.choices || [] });
+      S.currentChoices = buildMockChoices(currentSuccubus());
+      renderChoices();
     }
     saveGame();
   } catch (e) {
@@ -130,23 +160,13 @@ async function proceed(text) {
   }
 }
 
-function detectNav(text) {
-  if (/道具店|商店|道具行/.test(text)) { openShopChoice(); return true; }
-  if (/契約廳|官方契約|官方市場/.test(text)) { openMarket("official"); return true; }
-  if (/黑市|暗巷/.test(text)) { openMarket("blackmarket"); return true; }
-  return false;
-}
-
 /* ---------- 房產 ---------- */
 function handleBuyHouse(houseId) {
   const house = getHouse(houseId);
   if (!house) return;
   const d = DISTRICTS.find(x => x.houses.some(h => h.id === houseId));
   const rankReq = d ? (typeof districtRankReq === "function" ? districtRankReq(d.id) : 1) : 1;
-  if (S.master.rank < rankReq) {
-    showToast(`需先晉升至【${getRank(rankReq).name}】才能進入${d ? d.name : ""}。`);
-    return;
-  }
+  if (S.master.rank < rankReq) { showToast(`需先晉升至【${getRank(rankReq).name}】才能進入${d ? d.name : ""}。`); return; }
   if (S.master.gold < house.price) { showToast("你的錢袋不夠沉。"); return; }
   S.master.gold -= house.price;
   S.ownedHouses.push(houseId);
@@ -162,10 +182,7 @@ function handleMoveHouse(houseId) {
   if (!house || !S.ownedHouses.includes(houseId)) return;
   const d = DISTRICTS.find(x => x.houses.some(h => h.id === houseId));
   const rankReq = d ? (typeof districtRankReq === "function" ? districtRankReq(d.id) : 1) : 1;
-  if (S.master.rank < rankReq) {
-    showToast(`需先晉升至【${getRank(rankReq).name}】才能進入${d ? d.name : ""}。`);
-    return;
-  }
+  if (S.master.rank < rankReq) { showToast(`需先晉升至【${getRank(rankReq).name}】才能進入${d ? d.name : ""}。`); return; }
   S.currentHouseId = houseId;
   S.currentDistrictId = d ? d.id : S.currentDistrictId;
   pushLog("system", `你遷入了「${house.name}」。`);

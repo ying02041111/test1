@@ -1,172 +1,187 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>緋夜飼育錄</title>
-    <link rel="stylesheet" href="style.css">
-    <script>
-        // 全域防閃退與錯誤攔截器
-        window.onerror = function(msg, url, line) {
-            console.error("運行異常: ", msg, " 行數: ", line);
-            var errBox = document.getElementById("error-banner");
-            if (errBox) {
-                errBox.style.display = "block";
-                errBox.innerText = "系統提示：捕捉到運行異常 (" + msg + ")";
-            }
-            return false;
-        };
-    </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>緋夜飼育錄</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="error-banner" class="error-banner" style="display: none;"></div>
+  <div id="app">
+    <!-- 頂部狀態列 -->
+    <header id="status-bar">
+      <div class="brand">緋夜飼育錄</div>
+      <div class="status-meta">
+        <span id="stat-day">第 1 日 · 清晨</span>
+        <span id="stat-gold" class="pill">800 金</span>
+        <span id="stat-rank" class="rank-badge">見習飼育員</span>
+      </div>
+    </header>
 
-    <div class="app-container">
-        <!-- 頂部極簡狀態列 -->
-        <header class="top-bar">
-            <span class="app-title">緋夜飼育錄</span>
-            <div class="top-info">
-                <span id="display-time" class="time-tag">第 1 日 · 清晨</span>
-                <span id="display-quick-gold" class="gold-tag">800 G</span>
-            </div>
-        </header>
-
-        <!-- 主體內容區 (依分頁切換) -->
-        <main class="content-body">
-            <!-- 1. 劇情對話分頁 (選項為主 + 自由輸入) -->
-            <section id="tab-story" class="tab-content active">
-                <div id="story-log" class="story-scroll">
-                    <!-- 劇情與對話動態插入 -->
-                </div>
-                <!-- 動態選項區塊 (主要推進方式) -->
-                <div id="story-choices" class="choices-container">
-                    <!-- 動態產生的情境選項 -->
-                </div>
-                <!-- 自由輸入框 (輔助細膩操作) -->
-                <div class="input-container">
-                    <textarea id="player-input" placeholder="或是自行輸入任何行動、言語或指令..." rows="2"></textarea>
-                    <button id="btn-send" class="btn-action" onclick="handleSendAction()">行動</button>
-                </div>
-            </section>
-
-            <!-- 2. 魅魔狀態分頁 -->
-            <section id="tab-succubi" class="tab-content">
-                <div id="succubi-container" class="card-list">
-                    <!-- 魅魔卡片動態渲染 -->
-                </div>
-            </section>
-
-            <!-- 3. 主控專屬檔案分頁 (風格切換 + 自訂人設 + API設定) -->
-            <section id="tab-master" class="tab-content">
-                <div class="master-panel">
-                    <div class="panel-header">
-                        <h2>主控檔案</h2>
-                        <button class="btn-subtle" onclick="openApiModal()">⚙️ AI 模型設定</button>
-                    </div>
-
-                    <div class="game-card">
-                        <div class="card-header">
-                            <span id="master-title" class="card-title">見習飼育員 (Rank 1)</span>
-                            <span id="master-hp-badge" class="card-badge mint">體力: 100/100</span>
-                        </div>
-                        <div class="exp-bar-box">
-                            <div class="exp-text">
-                                <span>階級經驗</span>
-                                <span id="master-exp-text">0 / 120 EXP</span>
-                            </div>
-                            <div class="progress-track">
-                                <div id="master-exp-bar" class="progress-fill" style="width: 0%;"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="game-card">
-                        <label class="section-label">調教訓練風格：</label>
-                        <select id="master-style-select" class="styled-select" onchange="handleStyleChange()">
-                            <option value="dom">支配施虐型（冷酷嚴苛、崇尚威嚴、注重規矩與責罰）</option>
-                            <option value="soft">溫柔調教型（循循善誘、注重安撫與依戀、先攻心後破防）</option>
-                            <option value="profit">純粹利益型（理性冷血、視魅魔為高價值契約物）</option>
-                            <option value="lust">情慾沉淪型（享受雙方極致肉體糾纏與反客為主的快感）</option>
-                        </select>
-                        <p class="hint-text">* 風格將直接改變 AI 生成劇情時你的言行風範與魅魔對你的敬畏態度。</p>
-                    </div>
-
-                    <div class="game-card">
-                        <label class="section-label">主控自訂人設（背景/個性/外貌細節）：</label>
-                        <textarea id="master-custom-persona" class="styled-textarea" rows="4" 
-                            placeholder="例如：曾是帝國宮廷高階調教師，因遭陷害流落貧民窟。表面舉止溫雅有禮，實則眼光銳利、具有偏執的佔有慾..." 
-                            onblur="handlePersonaBlur()"></textarea>
-                        <p class="hint-text">* 此設定將作為不可推翻的事實注入 AI 大腦，深刻影響對話劇情。</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- 4. 背包道具分頁 (純展示品項/文案/數值變動) -->
-            <section id="tab-items" class="tab-content">
-                <div id="inventory-container" class="card-list">
-                    <!-- 道具清單動態渲染 -->
-                </div>
-            </section>
-
-            <!-- 5. 領地房產分頁 (三層折疊) -->
-            <section id="tab-housing" class="tab-content">
-                <div id="housing-container" class="district-list">
-                    <!-- 街區房屋動態渲染 -->
-                </div>
-            </section>
-        </main>
-
-        <!-- 底部五大功能導航條 -->
-        <nav class="bottom-nav">
-            <button class="nav-item active" onclick="switchTab('tab-story')">
-                <span class="nav-icon">📖</span>
-                <span class="nav-text">劇情推進</span>
-            </button>
-            <button class="nav-item" onclick="switchTab('tab-succubi')">
-                <span class="nav-icon">🥀</span>
-                <span class="nav-text">魅魔狀態</span>
-            </button>
-            <button class="nav-item" onclick="switchTab('tab-master')">
-                <span class="nav-icon">👤</span>
-                <span class="nav-text">主控檔案</span>
-            </button>
-            <button class="nav-item" onclick="switchTab('tab-items')">
-                <span class="nav-icon">📦</span>
-                <span class="nav-text">隨身背包</span>
-            </button>
-            <button class="nav-item" onclick="switchTab('tab-housing')">
-                <span class="nav-icon">🗝️</span>
-                <span class="nav-text">領地房產</span>
-            </button>
-        </nav>
-    </div>
-
-    <!-- API 設置彈出視窗 -->
-    <div id="api-modal" class="modal-backdrop" style="display: none;">
-        <div class="modal-box">
-            <h3 style="margin-bottom: 12px; color: #775C56;">⚙️ AI 模型連線設置</h3>
-            
-            <label class="modal-label">API 密鑰 (API Key)：</label>
-            <input type="password" id="cfg-api-key" class="modal-input" placeholder="sk-...">
-
-            <label class="modal-label">API 伺服器端點 (URL)：</label>
-            <input type="text" id="cfg-api-url" class="modal-input" placeholder="https://api.openai.com/v1/chat/completions">
-
-            <label class="modal-label">模型識別碼 (Model)：</label>
-            <input type="text" id="cfg-api-model" class="modal-input" placeholder="gpt-4o-mini">
-
-            <div class="modal-actions">
-                <button class="btn-subtle" onclick="closeApiModal()">取消</button>
-                <button class="btn-action" onclick="saveApiSettings()">保存設置</button>
-            </div>
+    <!-- 主內容 -->
+    <main id="view">
+      <!-- 劇情推進 -->
+      <section id="panel-story" class="panel active">
+        <div id="story-log" class="story-log"></div>
+        <div id="choice-list" class="choice-list"></div>
+        <div class="story-input">
+          <input id="story-input-field" type="text" placeholder="你想對她做什麼、說些什麼……" autocomplete="off">
+          <button id="btn-send" class="btn btn-accent">送出</button>
         </div>
-    </div>
+      </section>
 
-    <!-- 核心腳本載入順序 -->
-    <script src="data.js"></script>
-    <script src="core.js"></script>
-    <script src="ai.js"></script>
-    <script src="ui.js"></script>
-    <script src="main.js"></script>
+      <!-- 魅魔狀態 -->
+      <section id="panel-succubi" class="panel">
+        <div class="panel-head">
+          <h2>魅魔狀態</h2>
+          <button id="btn-open-market" class="btn">緋夜市場</button>
+        </div>
+        <div id="succubi-list" class="succubi-list"></div>
+      </section>
+
+      <!-- 主控檔案 -->
+      <section id="panel-master" class="panel">
+        <div class="card">
+          <h2 class="card-title">主控檔案</h2>
+          <div class="rank-block">
+            <div id="master-rank-name" class="rank-name">見習飼育員</div>
+            <div class="bar-track"><div id="master-exp-bar" class="bar-fill"></div></div>
+            <div id="master-exp-text" class="bar-text">0 / 100</div>
+          </div>
+          <div class="stat-row">
+            <span>體力 <b id="master-hp">100</b> / <b>100</b></span>
+            <span>金錢 <b id="master-gold">800</b></span>
+          </div>
+          <div class="field">
+            <label for="master-style">訓練風格</label>
+            <select id="master-style"></select>
+          </div>
+          <div class="field">
+            <label for="master-persona">自訂人設（會注入 AI）</label>
+            <textarea id="master-persona" rows="3" placeholder="寫下你希望扮演的主人樣貌……"></textarea>
+          </div>
+          <button id="btn-open-api" class="btn">API 設定</button>
+        </div>
+      </section>
+
+      <!-- 隨身背包 -->
+      <section id="panel-inventory" class="panel">
+        <div class="panel-head">
+          <h2>隨身背包</h2>
+          <button id="btn-open-shop" class="btn">道具商店</button>
+        </div>
+        <div id="inventory-list" class="inventory-list"></div>
+      </section>
+
+      <!-- 領地房產 -->
+      <section id="panel-property" class="panel">
+        <div class="panel-head"><h2>領地房產</h2></div>
+        <div id="property-list" class="property-list"></div>
+      </section>
+    </main>
+
+    <!-- 底部導航（純文字） -->
+    <nav id="bottom-nav">
+      <button class="nav-btn active" data-tab="story">劇情推進</button>
+      <button class="nav-btn" data-tab="succubi">魅魔狀態</button>
+      <button class="nav-btn" data-tab="master">主控檔案</button>
+      <button class="nav-btn" data-tab="inventory">隨身背包</button>
+      <button class="nav-btn" data-tab="property">領地房產</button>
+    </nav>
+  </div>
+
+  <!-- 市場視窗 -->
+  <div id="modal-market" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h2 id="market-title">緋夜市場</h2>
+        <button class="modal-close" data-close="modal-market">×</button>
+      </div>
+      <div id="market-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 道具商店視窗 -->
+  <div id="modal-shop" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h2 id="shop-title">道具商店</h2>
+        <button class="modal-close" data-close="modal-shop">×</button>
+      </div>
+      <div id="shop-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 契約確認彈窗（購買／出售共用） -->
+  <div id="modal-confirm" class="modal-overlay">
+    <div class="modal-dialog modal-dialog-sm">
+      <div class="modal-head">
+        <h2 id="confirm-title">契約確認</h2>
+        <button class="modal-close" data-close="modal-confirm">×</button>
+      </div>
+      <div id="confirm-body" class="modal-body"></div>
+      <div id="confirm-actions" class="modal-actions"></div>
+    </div>
+  </div>
+
+  <!-- 出售／拍賣視窗（含奇怪買家事件） -->
+  <div id="modal-sell" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h2 id="sell-title">契約轉讓</h2>
+        <button class="modal-close" data-close="modal-sell">×</button>
+      </div>
+      <div id="sell-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 永久契約視窗 -->
+  <div id="modal-contract" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h2>永久契約</h2>
+        <button class="modal-close" data-close="modal-contract">×</button>
+      </div>
+      <div id="contract-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- API 設定彈窗 -->
+  <div id="modal-api" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h2>API 設定</h2>
+        <button class="modal-close" data-close="modal-api">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="api-key">API Key</label>
+          <input id="api-key" type="password" placeholder="sk-...">
+        </div>
+        <div class="field">
+          <label for="api-url">API URL</label>
+          <input id="api-url" type="text" placeholder="https://api.openai.com/v1/chat/completions">
+        </div>
+        <div class="field">
+          <label for="api-model">模型</label>
+          <input id="api-model" type="text" placeholder="gpt-4o-mini">
+        </div>
+        <div class="modal-actions">
+          <button id="btn-api-test" class="btn">測試連線</button>
+          <button id="btn-api-save" class="btn btn-accent">儲存</button>
+        </div>
+        <div id="api-test-result" class="api-test-result"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 輕提示 -->
+  <div id="toast" class="toast"></div>
+
+  <script src="data.js"></script>
+  <script src="core.js"></script>
+  <script src="ai.js"></script>
+  <script src="ui.js"></script>
+  <script src="main.js"></script>
 </body>
 </html>

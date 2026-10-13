@@ -13,6 +13,15 @@ function persistApiSettings(cfg) {
   localStorage.setItem(API_SETTINGS_KEY, JSON.stringify(cfg || {}));
 }
 
+/* 自動補全端點：填 Base URL 或完整位址都能用 */
+function normalizeApiUrl(url) {
+  let u = String(url || "").trim();
+  if (!u) return "";
+  u = u.replace(/\/+$/, "");
+  if (/chat\/completions/i.test(u)) return u;   // 已含端點（含查詢參數也放行）
+  return u + "/chat/completions";               // 視為 Base URL，自動補上
+}
+
 function ownedItemNames() {
   return S.inventory.map(id => { const it = getItem(id); return it ? it.name : ""; }).filter(Boolean);
 }
@@ -85,8 +94,9 @@ function parseAIJson(text) {
 async function callStoryAI(userText) {
   const cfg = getApiSettings();
   if (!cfg.url || !cfg.key) return mockNarrativeResponse(userText);
+  const url = normalizeApiUrl(cfg.url);
   try {
-    const res = await fetch(cfg.url, {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
       body: JSON.stringify({
@@ -112,17 +122,24 @@ async function callStoryAI(userText) {
 async function testApiConnection() {
   const cfg = getApiSettings();
   if (!cfg.url || !cfg.key) return { ok: false, msg: "請先填妥 API Key 與 URL。" };
+  const url = normalizeApiUrl(cfg.url);
   try {
-    const res = await fetch(cfg.url, {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
       body: JSON.stringify({ model: cfg.model || "gpt-4o-mini", messages: [{ role: "user", content: "ping" }], max_tokens: 1 })
     });
     if (res.ok) return { ok: true, msg: "連線成功，夜路已通。" };
+
     const txt = await res.text();
-    return { ok: false, msg: "連線失敗：" + res.status + " " + (txt || "").slice(0, 120) };
+    let hint = "";
+    if (res.status === 404) hint = "（404＝找不到端點：URL 路徑不對，通常是少了 /chat/completions）";
+    else if (res.status === 401) hint = "（401＝API Key 無效或未授權）";
+    else if (res.status === 429) hint = "（429＝請求太頻繁或額度不足）";
+    else if (res.status === 400) hint = "（400＝請求格式或模型名稱可能有誤）";
+    return { ok: false, msg: `連線失敗：${res.status}${hint} ${(txt || "").slice(0, 90)}` };
   } catch (e) {
-    return { ok: false, msg: "連線失敗：" + e.message };
+    return { ok: false, msg: "連線失敗（無法觸及伺服器）：" + e.message };
   }
 }
 

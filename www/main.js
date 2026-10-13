@@ -51,6 +51,13 @@ function bindEvents() {
   document.getElementById("btn-api-test").addEventListener("click", doTestApi);
   document.getElementById("btn-reset").addEventListener("click", openResetConfirm);
 
+  document.getElementById("api-temperature").addEventListener("input", e => {
+    document.getElementById("temp-val").textContent = e.target.value;
+  });
+  document.getElementById("api-topp").addEventListener("input", e => {
+    document.getElementById("topp-val").textContent = e.target.value;
+  });
+
   window.addEventListener("beforeunload", saveGame);
 }
 
@@ -84,12 +91,17 @@ async function proceed(text) {
   const itemId = maybeUseItemByText(text);
   if (itemId) consumeItemByStory(itemId);
 
+  showThinking();
   const result = await callStoryAI(text);
+  hideThinking();
   processAICommands(result);
 
   if (!S.currentChoices || !S.currentChoices.length) {
     const fallback = mockNarrativeResponse(text);
-    if (fallback.narrative) appendStoryMessage("story", fallback.narrative);
+    if (fallback.narrative) {
+      appendStoryMessage("system", sceneHeader());
+      appendStoryMessage("story", fallback.narrative);
+    }
     processAICommands({ commands: fallback.commands || [], choices: fallback.choices || [] });
   }
   saveGame();
@@ -102,7 +114,7 @@ function detectNav(text) {
   return false;
 }
 
-/* ---------- 房產（含階級限制） ---------- */
+/* ---------- 房產 ---------- */
 function handleBuyHouse(houseId) {
   const house = getHouse(houseId);
   if (!house) return;
@@ -176,19 +188,34 @@ function openApiModal() {
   document.getElementById("api-key").value = cfg.key || "";
   document.getElementById("api-url").value = cfg.url || "";
   document.getElementById("api-model").value = cfg.model || "";
+  document.getElementById("api-thinking").checked = !!cfg.thinking;
+
+  const temp = (cfg.temperature != null && cfg.temperature !== "") ? cfg.temperature : 0.9;
+  const topp = (cfg.topP != null && cfg.topP !== "") ? cfg.topP : 1.0;
+  document.getElementById("api-temperature").value = temp;
+  document.getElementById("temp-val").textContent = temp;
+  document.getElementById("api-topp").value = topp;
+  document.getElementById("topp-val").textContent = topp;
+
   const box = document.getElementById("api-test-result");
   box.className = "api-test-result";
   box.textContent = "";
   openModal("modal-api");
 }
 
-function saveApiSettings() {
-  const cfg = {
+function readApiForm() {
+  return {
     key: document.getElementById("api-key").value.trim(),
     url: document.getElementById("api-url").value.trim(),
-    model: document.getElementById("api-model").value.trim()
+    model: document.getElementById("api-model").value.trim(),
+    thinking: document.getElementById("api-thinking").checked,
+    temperature: document.getElementById("api-temperature").value,
+    topP: document.getElementById("api-topp").value
   };
-  persistApiSettings(cfg);
+}
+
+function saveApiSettings() {
+  persistApiSettings(readApiForm());
   closeModal("modal-api");
   showToast("API 設定已存妥。");
 }
@@ -197,12 +224,7 @@ async function doTestApi() {
   const box = document.getElementById("api-test-result");
   box.className = "api-test-result";
   box.textContent = "測試中……";
-  const cfg = {
-    key: document.getElementById("api-key").value.trim(),
-    url: document.getElementById("api-url").value.trim(),
-    model: document.getElementById("api-model").value.trim()
-  };
-  persistApiSettings(cfg);
+  persistApiSettings(readApiForm());
   const r = await testApiConnection();
   box.className = "api-test-result " + (r.ok ? "ok" : "fail");
   box.textContent = r.msg;

@@ -20,7 +20,7 @@
 
     <!-- 主內容 -->
     <main id="view">
-      <!-- 劇情推進 -->
+      <!-- 劇情 -->
       <section id="panel-story" class="panel active">
         <div id="story-log" class="story-log"></div>
         <div id="choice-list" class="choice-list"></div>
@@ -30,19 +30,19 @@
         </div>
       </section>
 
-      <!-- 魅魔狀態 -->
+      <!-- 魅魔 -->
       <section id="panel-succubi" class="panel">
         <div class="panel-head">
-          <h2>魅魔狀態</h2>
+          <h2>魅魔</h2>
           <button id="btn-open-market" class="btn">緋夜市場</button>
         </div>
         <div id="succubi-list" class="succubi-list"></div>
       </section>
 
-      <!-- 主控檔案 -->
+      <!-- 主控 -->
       <section id="panel-master" class="panel">
         <div class="card">
-          <h2 class="card-title">主控檔案</h2>
+          <h2 class="card-title">主控</h2>
           <div class="rank-block">
             <div id="master-rank-name" class="rank-name">見習飼育員</div>
             <div class="bar-track"><div id="master-exp-bar" class="bar-fill"></div></div>
@@ -61,32 +61,33 @@
             <textarea id="master-persona" rows="3" placeholder="寫下你希望扮演的主人樣貌……"></textarea>
           </div>
           <button id="btn-open-api" class="btn">API 設定</button>
+          <button id="btn-reset" class="btn btn-danger">重新開始</button>
         </div>
       </section>
 
-      <!-- 隨身背包 -->
+      <!-- 背包 -->
       <section id="panel-inventory" class="panel">
         <div class="panel-head">
-          <h2>隨身背包</h2>
+          <h2>背包</h2>
           <button id="btn-open-shop" class="btn">道具商店</button>
         </div>
         <div id="inventory-list" class="inventory-list"></div>
       </section>
 
-      <!-- 領地房產 -->
+      <!-- 房產 -->
       <section id="panel-property" class="panel">
-        <div class="panel-head"><h2>領地房產</h2></div>
+        <div class="panel-head"><h2>房產</h2></div>
         <div id="property-list" class="property-list"></div>
       </section>
     </main>
 
-    <!-- 底部導航（純文字） -->
+    <!-- 底部導航（純文字，兩字） -->
     <nav id="bottom-nav">
-      <button class="nav-btn active" data-tab="story">劇情推進</button>
-      <button class="nav-btn" data-tab="succubi">魅魔狀態</button>
-      <button class="nav-btn" data-tab="master">主控檔案</button>
-      <button class="nav-btn" data-tab="inventory">隨身背包</button>
-      <button class="nav-btn" data-tab="property">領地房產</button>
+      <button class="nav-btn active" data-tab="story">劇情</button>
+      <button class="nav-btn" data-tab="succubi">魅魔</button>
+      <button class="nav-btn" data-tab="master">主控</button>
+      <button class="nav-btn" data-tab="inventory">背包</button>
+      <button class="nav-btn" data-tab="property">房產</button>
     </nav>
   </div>
 
@@ -112,7 +113,7 @@
     </div>
   </div>
 
-  <!-- 契約確認彈窗（購買／出售共用） -->
+  <!-- 契約確認彈窗（購買／出售／重新開始共用） -->
   <div id="modal-confirm" class="modal-overlay">
     <div class="modal-dialog modal-dialog-sm">
       <div class="modal-head">
@@ -124,7 +125,7 @@
     </div>
   </div>
 
-  <!-- 出售／拍賣視窗（含奇怪買家事件） -->
+  <!-- 出售／拍賣視窗 -->
   <div id="modal-sell" class="modal-overlay">
     <div class="modal-dialog">
       <div class="modal-head">

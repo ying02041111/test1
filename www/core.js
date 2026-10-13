@@ -115,7 +115,8 @@ function rollSuccubus(raceKey) {
     defect: null,
     affection: 5, obedience: 10, stress: 10, hunger: 25,
     origin: "roll", background: "", risk: null,
-    contract: "temporary", storyUnlocked: false
+    contract: "temporary", storyUnlocked: false,
+    present: true, place: ""
   };
 }
 
@@ -255,7 +256,8 @@ function confirmPurchase() {
     origin: c.risk === "低風險" ? "official" : "blackmarket",
     affection: c.statSeed.affection, obedience: c.statSeed.obedience,
     stress: c.statSeed.stress, hunger: c.statSeed.hunger,
-    contract: "temporary", storyUnlocked: false
+    contract: "temporary", storyUnlocked: false,
+    present: true, place: ""
   };
 
   S.succubi.push(suc);
@@ -271,7 +273,7 @@ function confirmPurchase() {
 
   if (typeof closeAllModals === "function") closeAllModals();
   if (typeof purchaseReaction === "function") {
-    const r = purchaseReaction(suc); // 內含「契約所帶離」場景與當前時間
+    const r = purchaseReaction(suc);
     if (r && typeof appendStoryMessage === "function") appendStoryMessage("story", r.narrative);
     if (r) S.currentChoices = r.choices || [];
   }
@@ -462,6 +464,18 @@ function processAICommands(cmd) {
           }
           break;
         }
+        case "presence": {
+          const suc = getSuccubus(c.succubusId) || currentSuccubus();
+          if (suc) {
+            const was = suc.present;
+            suc.present = (c.present !== false);
+            suc.place = c.place || "";
+            if (was !== suc.present) {
+              pushLog("system", `［${suc.name}］${suc.present ? "回到了你身邊" : ("離開了你身邊" + (suc.place ? `（${suc.place}）` : ""))}`);
+            }
+          }
+          break;
+        }
         case "time": advanceTime(c.phases || 1); break;
         case "gold": S.master.gold = Math.max(0, S.master.gold + (c.amount || 0)); break;
         case "hp": S.master.hp = clamp(S.master.hp + (c.amount || 0), 0, S.master.maxHp); break;
@@ -500,6 +514,10 @@ function loadGame() {
     S.sellState = null;
     if (!S.master || typeof S.master !== "object") S.master = base.master;
     S.succubi = Array.isArray(S.succubi) ? S.succubi : [];
+    S.succubi.forEach(s => {
+      if (typeof s.present !== "boolean") s.present = true;
+      if (typeof s.place !== "string") s.place = "";
+    });
     S.inventory = Array.isArray(S.inventory) ? S.inventory : [];
     S.ownedHouses = Array.isArray(S.ownedHouses) ? S.ownedHouses : ["oldtown_loft"];
     S.currentChoices = Array.isArray(S.currentChoices) ? S.currentChoices : [];

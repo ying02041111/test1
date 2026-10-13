@@ -9,7 +9,9 @@ let S = {
         maxHp: 100,
         gold: 800,
         exp: 0,
-        rank: 1
+        rank: 1,
+        style: "dom",      // dom / soft / profit / lust
+        persona: ""        // 玩家自由填寫的主控人設
     },
     day: 1,
     subPhase: 0, // 0: 清晨, 1: 午後, 2: 傍晚, 3: 深夜
@@ -21,6 +23,7 @@ let S = {
         snack: 2,
         tea: 1
     },
+    currentChoices: [],    // 當前劇情選項
     logs: [],
     summary: "剛抵達薄霧下城區的陰暗閣樓，作為見習飼育員邁出第一步。",
     facts: ["目前落腳於下城區陰暗閣樓。"]
@@ -28,13 +31,13 @@ let S = {
 
 const SUBPHASE_NAMES = ["清晨", "午後", "傍晚", "深夜"];
 
-// 1. 好感度增長倍率計算 (傲嬌/冷酷在 55 點觸發 1.6x 暴衝)
+// 1. 好感度增長倍率計算 (傲嬌/冷酷在 55 點突破防線後觸發 1.6x 暴衝)
 function calcRelRate(succubus) {
     const pers = PERSONALITIES.find(p => p.id === succubus.personality.id) || PERSONALITIES[0];
     if (succubus.relation >= 55) {
-        return pers.contrastRate; // 突破防線後 1.6x
+        return pers.contrastRate; // 破防反差暴衝 1.6x
     }
-    return pers.initialRate; // 55 以前防備森嚴 (0.4x)
+    return pers.initialRate; // 55 以前防備森嚴 0.4x
 }
 
 // 2. 主控經驗值與階級晉升
@@ -55,29 +58,31 @@ function checkMasterRank() {
     if (newRank > S.master.rank) {
         S.master.rank = newRank;
         const rankInfo = MASTER_RANKS[targetRankIndex];
-        pushLog(`【階級突破】主控獲得認可，正式晉升為「${rankInfo.title}」(Rank ${newRank})！`);
+        pushLog(`【階級晉升】主控實力獲得夜幕認可，晉升為「${rankInfo.title}」(Rank ${newRank})！`);
     }
 }
 
-// 3. 道具使用機制 (含等級防呆驗證與效果套用)
-function useItemOnSuccubus(itemId, succubusId) {
+// 3. 劇情純觸發道具結算 (道具背包不再設點擊使用按鈕，由 AI 判定劇情有使用時底層執行)
+function consumeItemByStory(itemId, succubusId = null) {
     const item = ITEMS[itemId];
     if (!item) return { success: false, msg: "查無此道具。" };
 
-    // 檢查背包
+    // 檢查背包是否有剩餘
     if (!S.inventory[itemId] || S.inventory[itemId] <= 0) {
-        return { success: false, msg: `背包中沒有「${item.name}」。` };
+        return { success: false, msg: `背包中無「${item.name}」。` };
     }
 
-    // 階級驗證：新手不可偷用高等級道具
+    // 階級驗證：新手不可駕馭高等級道具
     if (S.master.rank < item.reqRank) {
-        return { 
-            success: false, 
-            msg: `【階級不足】「${item.name}」需要 Rank ${item.reqRank} 才能駕馭！你目前僅為 Rank ${S.master.rank}。` 
-        };
+        pushLog(`【階級不足】「${item.name}」需要 Rank ${item.reqRank} 才能駕馭！主控目前階級為 Rank ${S.master.rank}，無法使用。`);
+        return { success: false, msg: "階級不足無法使用" };
     }
 
-    // 尋找目標魅魔 (部分道具不需魅魔，例如補茶)
+    // 扣除背包數量
+    S.inventory[itemId]--;
+    if (S.inventory[itemId] <= 0) delete S.inventory[itemId];
+
+    // 目標魅魔判定
     let target = null;
     if (succubusId) {
         target = S.succubi.find(s => s.id === succubusId);
@@ -85,11 +90,7 @@ function useItemOnSuccubus(itemId, succubusId) {
         target = S.succubi[0];
     }
 
-    // 扣除道具數量
-    S.inventory[itemId]--;
-    if (S.inventory[itemId] <= 0) delete S.inventory[itemId];
-
-    // 套用效果
+    // 結算效果
     const eff = item.effect;
     if (eff.masterHp) S.master.hp = Math.min(S.master.maxHp, S.master.hp + eff.masterHp);
     if (eff.masterHpFull) S.master.hp = S.master.maxHp;
@@ -106,12 +107,12 @@ function useItemOnSuccubus(itemId, succubusId) {
 
     if (eff.exp) addMasterExp(eff.exp);
 
-    pushLog(`使用了「${item.name}」${target ? `，作用於 ${target.name}` : ""}。`);
+    pushLog(`劇情中使用「${item.name}」${target ? `，作用於 ${target.name}` : ""}。(${item.statDesc})`);
     saveGame();
-    return { success: true, msg: `成功使用「${item.name}」！` };
+    return { success: true, msg: "使用成功" };
 }
 
-// 4. 魅魔生成機制 (已修復 DEFECTS 缺失)
+// 4. 魅魔隨機生成機制 (多維度排列組合，抽中後永久鎖入存檔)
 function rollSuccubus(raceKey = null) {
     const raceKeys = Object.keys(RACES);
     const chosenRace = RACES[raceKey || raceKeys[Math.floor(Math.random() * raceKeys.length)]];
@@ -119,8 +120,8 @@ function rollSuccubus(raceKey = null) {
     const defect = DEFECTS[Math.floor(Math.random() * DEFECTS.length)];
     const app = APPEARANCES[Math.floor(Math.random() * APPEARANCES.length)];
     const scent = SCENTS[Math.floor(Math.random() * SCENTS.length)];
-    
-    const names = ["莉莉絲", "愛麗拉", "維拉", "克蘿伊", "賽拉菲娜", "莫妮卡", "妮可", "蕾拉"];
+
+    const names = ["莉莉絲", "愛麗拉", "維拉", "克蘿伊", "賽拉菲娜", "莫妮卡", "妮可", "蕾拉", "卡蜜拉"];
     const name = names[Math.floor(Math.random() * names.length)];
 
     return {
@@ -138,7 +139,7 @@ function rollSuccubus(raceKey = null) {
     };
 }
 
-// 5. 時間推進機制 (僅在完整事件完成時推進，非逐句推進)
+// 5. 場景制時間推進系統
 function advanceTime(phases = 1) {
     for (let i = 0; i < phases; i++) {
         S.subPhase++;
@@ -148,7 +149,7 @@ function advanceTime(phases = 1) {
             triggerDailySettlement();
         }
     }
-    // 時間流逝自然回氣
+    // 時間推進微量回氣
     S.master.hp = Math.min(S.master.maxHp, S.master.hp + 5 * phases);
     saveGame();
 }
@@ -190,7 +191,7 @@ function triggerDailySettlement() {
             } else {
                 s.stress = Math.min(100, s.stress + 35);
                 s.relation = Math.max(0, s.relation - 8);
-                pushLog(`【飢渴狂亂】主角體力耗盡，無法滿足 ${s.name} 的體液吸食！她正瀕臨暴走。`);
+                pushLog(`【飢渴狂亂】主控體力耗盡，無法滿足 ${s.name} 的體液需求！魅魔瀕臨暴走。`);
             }
         } else {
             // 雜血/一般魅魔：扣糧食金幣
@@ -218,7 +219,12 @@ function loadGame() {
     try {
         const raw = localStorage.getItem(SAVE_KEY);
         if (raw) {
-            S = JSON.parse(raw);
+            const data = JSON.parse(raw);
+            // 補齊舊存檔可能缺少的屬性
+            if (!data.master.style) data.master.style = "dom";
+            if (typeof data.master.persona === "undefined") data.master.persona = "";
+            if (!Array.isArray(data.currentChoices)) data.currentChoices = [];
+            S = data;
             checkMasterRank();
             return true;
         }

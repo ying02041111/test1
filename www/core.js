@@ -1,493 +1,435 @@
 /* ============================================================
-   《緋夜飼育錄》核心邏輯 core.js
-   狀態、市場、出售、拍賣、永久契約、時間、階級、道具、商店、存檔
+   《緋夜飼育錄》介面渲染 ui.js
    ============================================================ */
 
-let S = defaultState();
-
-/* 街區進入門檻（依主控階級） */
-const DISTRICT_RANK = { oldtown: 1, lantern: 2, tower: 3, outskirt: 4 };
-
-function defaultState() {
-  return {
-    master: { hp: 100, maxHp: 100, gold: 800, exp: 0, rank: 1, style: "gentle", persona: "" },
-    day: 1,
-    subPhase: 0,
-    currentDistrictId: "oldtown",
-    currentHouseId: "oldtown_loft",
-    ownedHouses: ["oldtown_loft"],
-    succubi: [],
-    inventory: [],
-    currentChoices: [],
-    logs: [],
-    summary: "",
-    facts: [],
-    market: { type: null, candidates: [], selectedId: null, cache: {} },
-    sellState: null,
-    hasPurchased: false,
-    started: false
-  };
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function ensureState() { if (!S) S = defaultState(); }
+function signed(n) { return n > 0 ? "+" + n : "" + n; }
 
-/* ---------- 工具 ---------- */
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
-function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function openModal(id) { const m = document.getElementById(id); if (m) m.classList.add("open"); }
+function closeModal(id) { const m = document.getElementById(id); if (m) m.classList.remove("open"); }
+function closeAllModals() { document.querySelectorAll(".modal-overlay.open").forEach(m => m.classList.remove("open")); }
 
-function randomName() { return pick(SUCCUBUS_NAMES); }
-function getRank(r) { return MASTER_RANKS.find(x => x.rank === r) || MASTER_RANKS[0]; }
-function getDistrict(id) { return DISTRICTS.find(d => d.id === id); }
-
-function getHouse(houseId) {
-  for (const d of DISTRICTS) {
-    const h = d.houses.find(x => x.id === houseId);
-    if (h) return h;
-  }
-  return null;
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
-function getItem(itemId) { return ITEMS.find(i => i.id === itemId); }
-function hasItem(itemId) { return S.inventory.includes(itemId); }
-function addItem(itemId) { S.inventory.push(itemId); }
-function getSuccubus(id) { return S.succubi.find(s => s.id === id); }
-function currentSuccubus() { return S.succubi.length ? S.succubi[0] : null; }
-function isHighDistrict(id) { const d = getDistrict(id); return d ? !!d.isHigh : false; }
-function districtRankReq(id) { return DISTRICT_RANK[id] || 1; }
-
-/* ---------- 好感加成：55 前 0.4x，破冰後 1.6x ---------- */
-function calcRelRate(suc) {
-  if (!suc) return 1;
-  return suc.affection >= 55 ? 1.6 : 0.4;
+/* ---------- 等待提示 ---------- */
+let thinkingEl = null;
+function showThinking() {
+  const log = document.getElementById("story-log");
+  if (!log) return;
+  thinkingEl = document.createElement("div");
+  thinkingEl.className = "msg msg-system thinking";
+  thinkingEl.textContent = "……";
+  log.appendChild(thinkingEl);
+  log.scrollTop = log.scrollHeight;
+}
+function hideThinking() {
+  if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
 }
 
-/* ---------- 階級 ---------- */
-function addMasterExp(amount) {
-  if (!S) return;
-  S.master.exp += Math.round(amount);
-  checkMasterRank();
+/* ---------- 總渲染 ---------- */
+function renderAll() {
+  renderStatusBar();
+  renderStoryLog();
+  renderChoices();
+  renderSuccubi();
+  renderMaster();
+  renderInventory();
+  renderProperty();
 }
 
-function checkMasterRank() {
-  let r = 1;
-  for (const rank of MASTER_RANKS) if (S.master.exp >= rank.expNeed) r = rank.rank;
-  if (r > S.master.rank) {
-    S.master.rank = r;
-    const info = getRank(r);
-    pushLog("system", `你的名望如夜色蔓延——晉升【${info.name}】。${info.desc}`);
-  }
+function renderStatusBar() {
+  const m = S.master;
+  document.getElementById("stat-day").textContent = `第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]}`;
+  document.getElementById("stat-gold").textContent = `${m.gold} 金`;
+  document.getElementById("stat-rank").textContent = getRank(m.rank).name;
 }
 
-/* ---------- 隨機生成魅魔 ---------- */
-function rollSuccubus(raceKey) {
-  const race = RACES.find(r => r.key === raceKey) || pick(RACES);
-  const p = pick(PERSONALITIES), ap = pick(APPEARANCES), sc = pick(SCENTS);
-  return {
-    id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
-    name: randomName(),
-    raceKey: race.key, raceName: race.name, raceDesc: race.desc,
-    appearance: ap, scent: sc,
-    personality: p.id, personalityName: p.name, personalityDesc: p.desc,
-    defect: null,
-    affection: 5, obedience: 10, stress: 10, hunger: 25,
-    origin: "roll", background: "", risk: null,
-    contract: "temporary", storyUnlocked: false
-  };
+function switchTab(tabId) {
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+  const panel = document.getElementById("panel-" + tabId);
+  if (panel) panel.classList.add("active");
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tabId));
 }
 
-/* ---------- 時間 ---------- */
-function advanceTime(phases) {
-  if (!phases || phases <= 0) return;
-  for (let i = 0; i < phases; i++) {
-    S.subPhase++;
-    if (S.subPhase >= SUBPHASE_NAMES.length) {
-      S.subPhase = 0;
-      S.day++;
-      triggerDailySettlement();
-    }
-  }
+/* ---------- 劇情 ---------- */
+function appendStoryMessage(type, text) {
+  pushLog(type, text);
+  const log = document.getElementById("story-log");
+  if (!log) return;
+  const el = document.createElement("div");
+  el.className = "msg msg-" + type;
+  el.textContent = text;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
 }
 
-function triggerDailySettlement() {
-  let hpCost = 0, goldCost = 0, permIncome = 0;
-  for (const s of S.succubi) {
-    s.hunger = clamp(s.hunger + 15, 0, 100);
-    s.stress = clamp(s.stress + 4, 0, 100);
-    if (s.contract === "permanent") {
-      s.affection = clamp(s.affection + 2, 0, 100);
-      s.stress = clamp(s.stress - 2, 0, 100);
-      permIncome += 15;
-    }
-    if (s.raceKey === "pure") hpCost += 6; else goldCost += 20;
-  }
-  let msg = "新的一日來臨。";
-  if (hpCost > 0) { S.master.hp = clamp(S.master.hp - hpCost, 0, S.master.maxHp); msg += ` 純血魅魔循著你的氣味索食，你的體力被分走了 ${hpCost}。`; }
-  if (goldCost > 0) { S.master.gold = Math.max(0, S.master.gold - goldCost); msg += ` 你為魅魔張羅吃食，花去 ${goldCost} 金。`; }
-  pushLog("system", msg);
-
-  const income = 30 + S.master.rank * 15 + permIncome;
-  S.master.gold += income;
-  if (permIncome > 0) pushLog("system", `你名下的產業為你帶來 ${income} 金進帳，其中含永久契約的侍奉之禮。`);
-  else pushLog("system", `你名下的產業為你帶來 ${income} 金的進帳。`);
+function renderStoryLog() {
+  const log = document.getElementById("story-log");
+  log.innerHTML = (S.logs || []).map(l => `<div class="msg msg-${l.type}">${escapeHtml(l.text)}</div>`).join("");
+  log.scrollTop = log.scrollHeight;
 }
 
-/* ---------- 市場：購買候選（同日固定，換日刷新） ---------- */
-function generateMarketCandidates(type) {
-  const list = [];
-  const count = 3 + Math.floor(Math.random() * 2);
-  for (let i = 0; i < count; i++) list.push(generateOneCandidate(type, i));
-  return list;
+function renderChoices() {
+  const box = document.getElementById("choice-list");
+  if (!S.currentChoices || !S.currentChoices.length) { box.innerHTML = ""; return; }
+  box.innerHTML = S.currentChoices.map((c, i) => `<button class="choice-btn" data-i="${i}">${escapeHtml(c)}</button>`).join("");
 }
 
-function generateOneCandidate(type, idx) {
-  const isOfficial = type === "official";
-  const race = pick(RACES), p = pick(PERSONALITIES), ap = pick(APPEARANCES), sc = pick(SCENTS);
-  let defect = null, background = "", price = 0;
-
-  if (isOfficial) {
-    background = pick(OFFICIAL_BACKGROUNDS);
-    price = 600 + Math.floor(Math.random() * 800);
-  } else {
-    background = pick(BLACKMARKET_BACKGROUNDS);
-    price = 150 + Math.floor(Math.random() * 450);
-    if (Math.random() < 0.85) defect = pick(DEFECTS);
-  }
-  if (defect) price = Math.max(80, Math.floor(price * 0.7));
-
-  return {
-    id: "cand_" + type + "_" + idx + "_" + Math.floor(Math.random() * 10000),
-    name: randomName(),
-    raceKey: race.key, raceName: race.name, raceDesc: race.desc,
-    appearance: ap, scent: sc,
-    personality: p.id, personalityName: p.name, personalityDesc: p.desc,
-    defect: defect, background: background, price: price,
-    risk: isOfficial ? "低風險" : "高風險",
-    statSeed: {
-      affection: isOfficial ? randInt(10, 19) : randInt(2, 7),
-      obedience: isOfficial ? randInt(20, 34) : randInt(3, 10),
-      stress: isOfficial ? randInt(5, 12) : randInt(20, 39),
-      hunger: randInt(20, 39)
-    }
-  };
+/* ---------- 主控 ---------- */
+function renderMaster() {
+  const m = S.master;
+  const rank = getRank(m.rank);
+  const next = MASTER_RANKS.find(r => r.rank === m.rank + 1);
+  document.getElementById("master-rank-name").textContent = `${rank.name} · ${rank.desc}`;
+  document.getElementById("master-hp").textContent = m.hp;
+  document.getElementById("master-gold").textContent = m.gold;
+  document.getElementById("master-exp-text").textContent = next ? `${m.exp} / ${next.expNeed}` : `${m.exp} / 滿階`;
+  document.getElementById("master-exp-bar").style.width = (next ? clamp(m.exp / next.expNeed * 100, 0, 100) : 100) + "%";
+  document.getElementById("master-style").innerHTML = MASTER_STYLES
+    .map(s => `<option value="${s.id}" ${s.id === m.style ? "selected" : ""}>${s.name} — ${s.desc}</option>`).join("");
+  document.getElementById("master-persona").value = m.persona || "";
 }
 
-function openMarket(type) {
-  if (!MARKET_INFO[type]) return;
-  if (type === "blackmarket" && !S.hasPurchased) {
-    pushLog("system", "你尚無名下魅魔，暗巷黑市還不對你敞開。先到官方契約廳，挑第一雙屬於你的眼睛吧。");
-    if (typeof renderAll === "function") renderAll();
+/* ---------- 魅魔 ---------- */
+function statItem(label, val, cls) {
+  return `<div class="stat-item">
+    <div class="stat-label"><span>${label}</span><b>${val}</b></div>
+    <div class="bar-track ${cls}"><div class="bar-fill" style="width:${val}%"></div></div>
+  </div>`;
+}
+
+function renderSuccubi() {
+  const box = document.getElementById("succubi-list");
+  if (!S.succubi.length) {
+    box.innerHTML = `<div class="card"><p style="color:var(--ink-soft);font-size:13.5px">你的名下尚無魅魔。夜色很靜，只差一雙屬於你的眼睛。</p></div>`;
     return;
   }
-
-  S.market.type = type;
-  const cache = S.market.cache || (S.market.cache = {});
-  const entry = cache[type];
-  if (entry && entry.day === S.day) {
-    S.market.candidates = entry.list.slice();
-  } else {
-    const list = generateMarketCandidates(type);
-    cache[type] = { day: S.day, list };
-    S.market.candidates = list.slice();
-  }
-  S.market.selectedId = null;
-  if (typeof renderMarket === "function") renderMarket();
+  box.innerHTML = S.succubi.map(s => {
+    const perm = s.contract === "permanent";
+    const defTag = s.defect ? `<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>` : "";
+    return `<div class="succubus-card" onclick="openSuccubusDetail('${s.id}')">
+      <div class="succubus-top">
+        <div class="avatar">${escapeHtml(s.name.charAt(0))}</div>
+        <div>
+          <div class="succubus-name">${escapeHtml(s.name)} ${perm ? '<span class="tag tag-safe">永久契約</span>' : '<span class="tag tag-muted">暫時契約</span>'}</div>
+          <div class="succubus-sub">${escapeHtml(s.raceName)} · ${escapeHtml(s.personalityName)} ${defTag}</div>
+        </div>
+      </div>
+      <div class="stat-grid">
+        ${statItem("好感", s.affection, "bar-affection")}
+        ${statItem("服從", s.obedience, "bar-obedience")}
+        ${statItem("壓力", s.stress, "bar-stress")}
+        ${statItem("飢餓", s.hunger, "bar-hunger")}
+      </div>
+      <div class="succubus-actions">
+        ${perm ? "" : `<button class="btn" onclick="event.stopPropagation(); openSellFlow('${s.id}')">契約轉讓</button>`}
+        ${perm ? "" : `<button class="btn" onclick="event.stopPropagation(); openContractFlow('${s.id}')">簽訂永久契約</button>`}
+      </div>
+    </div>`;
+  }).join("");
 }
 
-function inspectCandidate(id) {
-  const c = S.market.candidates.find(x => x.id === id);
-  if (!c) return null;
-  S.market.selectedId = id;
-  if (typeof renderCandidateDetail === "function") renderCandidateDetail(c);
-  return c;
+function openSuccubusDetail(id) {
+  const s = getSuccubus(id);
+  if (!s) return;
+  document.getElementById("succubus-title").textContent = s.name;
+  const perm = s.contract === "permanent";
+  const riskTag = s.risk ? `<span class="tag ${s.risk === "低風險" ? "tag-safe" : "tag-risk"}">${s.risk}</span>` : "";
+  document.getElementById("succubus-body").innerHTML = `
+    <div class="candidate-detail">
+      <div class="row"><b>${escapeHtml(s.name)}</b>　<span class="tag ${perm ? "tag-safe" : "tag-muted"}">${perm ? "永久契約" : "暫時契約"}</span> ${riskTag}</div>
+      <div class="row"><b>種族</b>　${escapeHtml(s.raceName)}　${escapeHtml(s.raceDesc || "")}</div>
+      <div class="row"><b>個性</b>　${escapeHtml(s.personalityName)}　${escapeHtml(s.personalityDesc || "")}</div>
+      <div class="row"><b>外貌</b>　${escapeHtml(s.appearance || "")}</div>
+      <div class="row"><b>氣味</b>　${escapeHtml(s.scent || "")}</div>
+      ${s.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>　${escapeHtml(s.defect.desc || "")}</div>` : ""}
+      ${s.background ? `<div class="row"><b>來歷</b>　${escapeHtml(s.background)}</div>` : ""}
+      <div class="stat-grid">
+        ${statItem("好感", s.affection, "bar-affection")}
+        ${statItem("服從", s.obedience, "bar-obedience")}
+        ${statItem("壓力", s.stress, "bar-stress")}
+        ${statItem("飢餓", s.hunger, "bar-hunger")}
+      </div>
+    </div>`;
+  openModal("modal-succubus");
 }
 
-function showConfirm(id) {
-  const c = S.market.candidates.find(x => x.id === id);
-  if (!c) return null;
-  S.market.selectedId = id;
-  if (typeof showConfirmModal === "function") showConfirmModal(c);
-  return c;
-}
-
-function confirmPurchase() {
-  const c = S.market.candidates.find(x => x.id === S.market.selectedId);
-  if (!c) return;
-  const type = S.market.type;
-  if (S.master.gold < c.price) {
-    pushLog("system", `你的錢袋不夠沉，還差 ${c.price - S.master.gold} 金。`);
-    if (typeof renderMarket === "function") renderMarket();
+/* ---------- 背包 ---------- */
+function renderInventory() {
+  const box = document.getElementById("inventory-list");
+  if (!S.inventory.length) {
+    box.innerHTML = `<div class="card"><p style="color:var(--ink-soft);font-size:13.5px">背包空空如也。緋夜的道具，可到道具商店裡尋。</p></div>`;
     return;
   }
+  const counts = {};
+  S.inventory.forEach(id => counts[id] = (counts[id] || 0) + 1);
+  box.innerHTML = Object.keys(counts).map(id => {
+    const it = getItem(id);
+    if (!it) return "";
+    const isCodex = it.category === "高階";
+    const eff = `好感${signed(it.effects.affection)}　服從${signed(it.effects.obedience)}　壓力${signed(it.effects.stress)}　飢餓${signed(it.effects.hunger)}`;
+    return `<div class="item-card ${isCodex ? "codex" : ""}">
+      <div class="item-head"><span class="item-name">${escapeHtml(it.name)} ×${counts[id]}</span><span class="tag ${isCodex ? "tag-risk" : "tag-muted"}">${escapeHtml(it.category)}</span></div>
+      <div class="item-desc">${escapeHtml(it.desc)}</div>
+      <div class="item-effects">${eff}</div>
+    </div>`;
+  }).join("");
+}
 
-  S.master.gold -= c.price;
-  const suc = {
-    id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
-    name: c.name,
-    raceKey: c.raceKey, raceName: c.raceName, raceDesc: c.raceDesc,
-    appearance: c.appearance, scent: c.scent,
-    personality: c.personality, personalityName: c.personalityName, personalityDesc: c.personalityDesc,
-    defect: c.defect, background: c.background, risk: c.risk,
-    origin: c.risk === "低風險" ? "official" : "blackmarket",
-    affection: c.statSeed.affection, obedience: c.statSeed.obedience,
-    stress: c.statSeed.stress, hunger: c.statSeed.hunger,
-    contract: "temporary", storyUnlocked: false
-  };
+/* ---------- 房產 ---------- */
+function renderProperty() {
+  const box = document.getElementById("property-list");
+  box.innerHTML = DISTRICTS.map(d => {
+    const rankReq = districtRankReq(d.id);
+    const locked = S.master.rank < rankReq;
+    const openCls = (!locked && S.currentDistrictId === d.id) ? " open" : "";
+    const badge = locked
+      ? `<span class="tag tag-risk">需 ${getRank(rankReq).name}</span>`
+      : (d.isHigh ? '<span class="tag tag-safe">高級街區</span>' : '');
+    return `<div class="district-block${openCls}" data-district="${d.id}">
+      <div class="district-head" onclick="toggleDistrict('${d.id}')">
+        <div><div class="name">${escapeHtml(d.name)} ${badge}</div><div class="desc">${escapeHtml(d.desc)}</div></div>
+      </div>
+      <div class="district-body">
+        ${locked
+          ? `<div style="font-size:12.5px;color:var(--ink-soft)">你的名望尚不足以踏足此地，需晉升至【${getRank(rankReq).name}】。</div>`
+          : d.houses.map(h => {
+              const owned = S.ownedHouses.includes(h.id);
+              const current = S.currentHouseId === h.id;
+              return `<div class="house-row">
+                <div class="info"><div class="name">${escapeHtml(h.name)} ${current ? '<span class="tag tag-safe">現居</span>' : ""}</div><div class="desc">${escapeHtml(h.desc)}</div></div>
+                ${current ? "" : owned ? `<button class="btn" onclick="handleMoveHouse('${h.id}')">遷入</button>` : `<button class="btn btn-accent" onclick="handleBuyHouse('${h.id}')">${h.price} 金 購入</button>`}
+              </div>`;
+            }).join("")}
+      </div>
+    </div>`;
+  }).join("");
+}
 
-  S.succubi.push(suc);
-  S.hasPurchased = true;
+/* ---------- 市場 ---------- */
+function openMarketChoiceModal() {
+  document.getElementById("market-title").textContent = "緋夜市場";
+  const hasSuc = !!S.hasPurchased;
+  const blackBtn = hasSuc
+    ? `<button class="btn" onclick="openMarket('blackmarket')">暗巷黑市 <span class="tag tag-risk">高風險</span></button>`
+    : `<button class="btn" disabled>暗巷黑市 <span class="tag tag-risk">未開放</span></button>`;
+  const note = hasSuc ? "" : `<p style="font-size:12.5px;color:var(--ink-soft)">初入緋夜，暗巷黑市還不對你敞開。先購得第一隻魅魔，才有人為你引路。</p>`;
+  document.getElementById("market-body").innerHTML = `
+    <div class="market-intro">今夜，你要踏入哪一扇門？</div>
+    <button class="btn" onclick="openMarket('official')">官方契約市場 <span class="tag tag-safe">低風險</span></button>
+    ${blackBtn}
+    ${note}`;
+  openModal("modal-market");
+}
 
-  if (type && S.market.cache && S.market.cache[type]) {
-    S.market.cache[type].list = S.market.cache[type].list.filter(x => x.id !== c.id);
+function renderMarket() {
+  const info = MARKET_INFO[S.market.type];
+  if (!info) return;
+  document.getElementById("market-title").textContent = info.name;
+  document.getElementById("market-body").innerHTML = `
+    <div class="market-intro">${escapeHtml(info.desc)}　<span class="tag ${info.type === "official" ? "tag-safe" : "tag-risk"}">${info.riskLabel}</span></div>
+    ${S.market.candidates.map(c => `
+      <div class="market-card ${info.type}" onclick="inspectCandidate('${c.id}')">
+        <div class="top"><span class="name">${escapeHtml(c.name)}</span><span class="price">${c.price} 金</span></div>
+        <div class="meta">${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)} · <span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
+        <div class="background">${escapeHtml(c.background)}</div>
+      </div>`).join("")}`;
+  openModal("modal-market");
+}
+
+function renderCandidateDetail(c) {
+  const body = document.getElementById("market-body");
+  body.innerHTML = `
+    <div class="candidate-detail">
+      <div class="row"><b>${escapeHtml(c.name)}</b>　<span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
+      <div class="row"><b>外貌</b>　${escapeHtml(c.appearance)}</div>
+      <div class="row"><b>氣味</b>　${escapeHtml(c.scent)}</div>
+      <div class="row"><b>種族</b>　${escapeHtml(c.raceName)}　${escapeHtml(c.raceDesc)}</div>
+      <div class="row"><b>個性</b>　${escapeHtml(c.personalityName)}　${escapeHtml(c.personalityDesc)}</div>
+      ${c.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(c.defect.name)}</span>　${escapeHtml(c.defect.desc)}</div>` : ""}
+      <div class="row"><b>來歷</b>　${escapeHtml(c.background)}</div>
+      <div class="row"><b>價格</b>　${c.price} 金</div>
+      <button class="btn btn-accent" onclick="showConfirm('${c.id}')">決定購買</button>
+      <button class="btn" onclick="renderMarket()">返回清單</button>
+    </div>`;
+}
+
+function showConfirmModal(c) {
+  document.getElementById("confirm-title").textContent = "契約確認";
+  document.getElementById("confirm-body").innerHTML = `
+    <p style="font-size:14px">你確定要以 <b style="color:var(--accent-warn)">${c.price} 金</b> 簽下 ${escapeHtml(c.name)} 嗎？</p>
+    <p style="font-size:12.5px;color:var(--ink-soft)">${escapeHtml(c.risk)} · ${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)}</p>`;
+  document.getElementById("confirm-actions").innerHTML = `
+    <button class="btn" onclick="closeModal('modal-confirm')">再想想</button>
+    <button class="btn btn-accent" onclick="confirmPurchase()">確定締約</button>`;
+  openModal("modal-confirm");
+}
+
+/* ---------- 道具商店 ---------- */
+let currentShopType = "official";
+
+function openShopChoice() {
+  document.getElementById("shop-title").textContent = "道具商店";
+  document.getElementById("shop-body").innerHTML = `
+    <div class="market-intro">今夜，你要推開哪一扇鋪門？</div>
+    <button class="btn" onclick="openShop('official')">官方道具行 <span class="tag tag-safe">正規 · 入門補品</span></button>
+    <button class="btn" onclick="openShop('blackmarket')">暗巷黑市道具鋪 <span class="tag tag-risk">違禁 · 高階</span></button>`;
+  openModal("modal-shop");
+}
+
+function openShop(type) {
+  currentShopType = type;
+  const info = SHOP_INFO[type];
+  if (!info) return;
+  document.getElementById("shop-title").textContent = info.name;
+  renderShop(type);
+  openModal("modal-shop");
+}
+
+function renderShop(type) {
+  const info = SHOP_INFO[type];
+  const list = shopItems(type);
+  const body = document.getElementById("shop-body");
+
+  const itemsHtml = list.map(it => {
+    const rank = getRank(it.rankReq);
+    const rankText = it.rankReq <= 1 ? "入門" : `解鎖 ${rank.name}`;
+    const locked = S.master.rank < it.rankReq;
+    const poor = S.master.gold < it.price;
+    const owned = hasItem(it.id) ? ' <span class="tag tag-safe">已持有</span>' : "";
+    const eff = `好感${signed(it.effects.affection)} 服從${signed(it.effects.obedience)} 壓力${signed(it.effects.stress)} 飢餓${signed(it.effects.hunger)}`;
+    const btnLabel = locked ? "階級不足" : (poor ? "金幣不足" : "購買");
+    return `<div class="market-card ${type === "blackmarket" ? "blackmarket" : "official"}">
+      <div class="top"><span class="name">${escapeHtml(it.name)}${owned}</span><span class="price">${it.price} 金</span></div>
+      <div class="meta"><span class="tag ${type === "blackmarket" ? "tag-risk" : "tag-muted"}">${escapeHtml(it.category)}</span> · ${rankText}${locked ? ' <span class="tag tag-risk">階級不足</span>' : ""}</div>
+      <div class="background">${escapeHtml(it.desc)}</div>
+      <div class="meta">${eff}</div>
+      <button class="btn ${(locked || poor) ? "" : "btn-accent"}" onclick="handleBuyItem('${it.id}')" ${(locked || poor) ? "disabled" : ""}>${btnLabel}</button>
+    </div>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="market-intro">${escapeHtml(info.desc)}　<span class="tag ${type === "blackmarket" ? "tag-risk" : "tag-safe"}">${info.riskLabel}</span></div>
+    <button class="btn" onclick="openShopChoice()">返回選擇</button>
+    ${itemsHtml}`;
+}
+
+function handleBuyItem(itemId) {
+  if (buyItem(itemId)) {
+    renderShop(currentShopType);
+    renderInventory();
+    renderStatusBar();
+    showToast(`已購入「${getItem(itemId).name}」。`);
+    if (typeof saveGame === "function") saveGame();
   }
-  S.market.candidates = S.market.candidates.filter(x => x.id !== c.id);
-  S.market.selectedId = null;
-  S.market.type = null;
-  addMasterExp(25);
-
-  if (typeof closeAllModals === "function") closeAllModals();
-  if (typeof purchaseReaction === "function") {
-    const r = purchaseReaction(suc);
-    if (r && typeof appendStoryMessage === "function") appendStoryMessage("story", r.narrative);
-    if (r) S.currentChoices = r.choices || [];
-  }
-  pushLog("system", `契約成立。${suc.name} 從此納入你的名下，${suc.risk}的出身，往後都得由你負責。`);
-  if (typeof renderAll === "function") renderAll();
 }
 
 /* ---------- 出售 ---------- */
-function computeQuality(suc) {
-  return Math.round(suc.affection * 2 + suc.obedience * 3 + (100 - suc.stress) * 1.5 - suc.hunger * 0.8);
-}
-
-function officialPrice(suc) {
-  return Math.max(80, 150 + Math.round(computeQuality(suc) * 1.2));
-}
-
-function blackPrice(suc) {
-  return Math.max(150, Math.round(officialPrice(suc) * (1.4 + Math.random() * 0.6)));
-}
-
-function auctionPrice(suc) {
-  return Math.round(officialPrice(suc) * (1.8 + Math.random() * 1.2));
-}
-
-function prepareSell(succubusId, channel) {
+function openSellFlow(succubusId) {
   const suc = getSuccubus(succubusId);
-  if (!suc) return null;
-  if (suc.contract === "permanent") { pushLog("system", "她已與你締下永久之契，不能再被轉讓。"); return null; }
-
-  S.sellState = { succubusId, channel, weird: null, price: 0 };
-
-  if (channel === "official") {
-    S.sellState.price = officialPrice(suc);
-  } else if (channel === "blackmarket") {
-    S.sellState.price = blackPrice(suc);
-    if (Math.random() < 0.45) {
-      const w = pick(WEIRD_BUYERS);
-      S.sellState.weird = w;
-      S.sellState.price = Math.max(120, Math.round(S.sellState.price * w.priceMult));
-    }
-  } else if (channel === "auction") {
-    if (!isHighDistrict(S.currentDistrictId)) { pushLog("system", "拍賣會只在高等街區舉辦，緋夜舊城沒有這等燈海。"); S.sellState = null; return null; }
-    if (!(suc.obedience >= AUCTION_INFO.minObedience && suc.affection >= AUCTION_INFO.minAffection)) {
-      pushLog("system", "她的火候還不夠，尚不足以站上競價台。");
-      S.sellState = null;
-      return null;
-    }
-    S.sellState.price = auctionPrice(suc);
-  }
-  return S.sellState;
+  if (!suc) return;
+  if (suc.contract === "permanent") { showToast("她已締下永久之契，不能再轉讓。"); return; }
+  document.getElementById("sell-title").textContent = "契約轉讓 · " + suc.name;
+  document.getElementById("sell-body").innerHTML = `
+    <div class="market-intro">你想將 ${escapeHtml(suc.name)} 轉往何處？</div>
+    <button class="btn" onclick="prepareSellAndRender('${succubusId}','official')">官方契約廳 <span class="tag tag-safe">低風險 · 收價低</span></button>
+    <button class="btn" onclick="prepareSellAndRender('${succubusId}','blackmarket')">暗巷黑市 <span class="tag tag-risk">高風險 · 收價高</span></button>
+    <button class="btn" onclick="prepareSellAndRender('${succubusId}','auction')">拍賣會 <span class="tag tag-safe">最高價 · 限高等級</span></button>`;
+  openModal("modal-sell");
 }
 
-function executeSell() {
-  if (!S.sellState) return false;
-  const { succubusId, channel, price, weird } = S.sellState;
-  const idx = S.succubi.findIndex(s => s.id === succubusId);
-  if (idx === -1) { S.sellState = null; return false; }
-  const suc = S.succubi[idx];
-  S.succubi.splice(idx, 1);
+function prepareSellAndRender(succubusId, channel) {
+  const st = prepareSell(succubusId, channel);
+  if (!st) { closeModal("modal-sell"); renderAll(); return; }
+  renderSellState(st);
+}
 
-  let gold = price;
-  if (channel === "auction") gold = Math.round(price * (1 - AUCTION_INFO.commission));
-
-  let bonusText = "";
-  if (weird && weird.effect) {
-    gold += (weird.effect.gold || 0);
-    S.master.hp = clamp(S.master.hp + (weird.effect.hp || 0), 0, S.master.maxHp);
-    if (weird.effect.exp) addMasterExp(weird.effect.exp);
-    bonusText = " " + (weird.consequenceText || "");
+function renderSellState(st) {
+  const body = document.getElementById("sell-body");
+  const suc = getSuccubus(st.succubusId);
+  if (st.weird) {
+    body.innerHTML = `
+      <div class="candidate-detail">
+        <div class="row" style="color:var(--accent-warn);font-weight:700">—— 有人攔下了你的去路 ——</div>
+        <div class="row"><b>${escapeHtml(st.weird.name)}</b></div>
+        <div class="row">${escapeHtml(st.weird.flavor)}</div>
+        <div class="row"><b>開價</b>　${st.price} 金</div>
+        <div class="row" style="font-size:12.5px;color:var(--ink-soft)">${escapeHtml(st.weird.consequenceText)}</div>
+        <div class="modal-actions" style="padding:0;border:none">
+          <button class="btn" onclick="refuseSell()">不賣</button>
+          <button class="btn btn-accent" onclick="acceptSell()">賣了</button>
+        </div>
+      </div>`;
+  } else {
+    const note = st.channel === "auction" ? `（拍賣會抽成 ${Math.round(AUCTION_INFO.commission * 100)}%）` : "";
+    const channelDesc = st.channel === "official" ? "官方契約廳手續正規，估價保守。" : st.channel === "blackmarket" ? "暗巷掮客開出的價碼。" : "燈海中央，競價落槌。";
+    body.innerHTML = `
+      <div class="candidate-detail">
+        <div class="row"><b>${escapeHtml(suc ? suc.name : "")}</b> 的轉讓</div>
+        <div class="row">${channelDesc}</div>
+        <div class="row"><b>成交價</b>　${st.price} 金 ${note}</div>
+        <div class="modal-actions" style="padding:0;border:none">
+          <button class="btn" onclick="closeModal('modal-sell')">再想想</button>
+          <button class="btn btn-accent" onclick="acceptSell()">確定轉讓</button>
+        </div>
+      </div>`;
   }
+}
 
-  S.master.gold += gold;
-  addMasterExp(channel === "auction" ? 30 : 15);
-  pushLog("system", `你將 ${suc.name} 轉讓了出去，換得 ${gold} 金。${bonusText}`);
+function acceptSell() {
+  const ok = executeSell();
+  closeModal("modal-sell");
+  renderAll();
+  showToast(ok ? "契約已轉讓。" : "交易未能完成。");
+}
+
+function refuseSell() {
+  if (S.sellState && S.sellState.weird) {
+    pushLog("system", "你搖搖頭，攏緊了披風，牽著她離開那雙不安分的目光。");
+  }
   S.sellState = null;
-  return true;
+  closeModal("modal-sell");
+  renderAll();
 }
 
 /* ---------- 永久契約 ---------- */
-function signPermanentContract(succubusId) {
+function openContractFlow(succubusId) {
   const suc = getSuccubus(succubusId);
-  if (!suc) return false;
-  if (suc.contract === "permanent") { pushLog("system", "她早已是你緋夜的一部分。"); return false; }
-  if (suc.affection < CONTRACT_INFO.permanentAffectionReq) {
-    pushLog("system", `她的心意尚未抵達。永久之契需要好感達到 ${CONTRACT_INFO.permanentAffectionReq}。`);
-    return false;
-  }
-  if (S.master.gold < CONTRACT_INFO.permanentCost) {
-    pushLog("system", "你的錢袋不夠沉，無力置辦這份永久的儀式。");
-    return false;
-  }
-  S.master.gold -= CONTRACT_INFO.permanentCost;
-  suc.contract = "permanent";
-  suc.storyUnlocked = true;
-  addMasterExp(40);
-  pushLog("system", `以血與吻烙下永久之契。${suc.name} 從此不再是可以易手的貨物，而是你緋夜的一部分。`);
-  return true;
+  if (!suc) return;
+  const title = document.querySelector("#modal-contract .modal-head h2");
+  if (title) title.textContent = "永久契約 · " + suc.name;
+  const eligible = suc.affection >= CONTRACT_INFO.permanentAffectionReq;
+  const affordable = S.master.gold >= CONTRACT_INFO.permanentCost;
+  document.getElementById("contract-body").innerHTML = `
+    <div class="candidate-detail">
+      <div class="row">${escapeHtml(CONTRACT_INFO.permanentDesc)}</div>
+      <div class="row"><b>締約條件</b>　好感 ≥ ${CONTRACT_INFO.permanentAffectionReq}（目前 ${suc.affection}）</div>
+      <div class="row"><b>締約之禮</b>　${CONTRACT_INFO.permanentCost} 金</div>
+      <div class="row"><b>永恆回報</b>　${escapeHtml(CONTRACT_INFO.bonusesDesc)}</div>
+      <div class="modal-actions" style="padding:0;border:none">
+        <button class="btn" onclick="closeModal('modal-contract')">再想想</button>
+        <button class="btn btn-accent" onclick="doSignContract('${succubusId}')" ${(eligible && affordable) ? "" : "disabled"}>以血為誓</button>
+      </div>
+    </div>`;
+  openModal("modal-contract");
 }
 
-/* ---------- 道具 ---------- */
-function applyEffects(suc, fx) {
-  if (!suc || !fx) return;
-  let aff = fx.affection || 0, obe = fx.obedience || 0;
-  if (suc.contract === "permanent") {
-    if (aff > 0) aff = Math.round(aff * 1.5);
-    if (obe > 0) obe = Math.round(obe * 1.5);
-  }
-  suc.affection = clamp(suc.affection + aff, 0, 100);
-  suc.obedience = clamp(suc.obedience + obe, 0, 100);
-  suc.stress = clamp(suc.stress + (fx.stress || 0), 0, 100);
-  suc.hunger = clamp(suc.hunger + (fx.hunger || 0), 0, 100);
-}
-
-function consumeItemByStory(itemId, succubusId) {
-  const idx = S.inventory.indexOf(itemId);
-  if (idx === -1) return false;
-  S.inventory.splice(idx, 1);
-  const item = getItem(itemId);
-  const suc = getSuccubus(succubusId) || currentSuccubus();
-  if (item && suc) {
-    applyEffects(suc, item.effects);
-    if (item.masterHp) {
-      S.master.hp = clamp(S.master.hp + item.masterHp, 0, S.master.maxHp);
-      pushLog("system", `駕馭「${item.name}」耗去了你 ${-item.masterHp} 點體力。`);
-    }
-    pushLog("story", `你使用了「${item.name}」。${item.desc}`);
-    addMasterExp(3);
-  }
-  return true;
-}
-
-function useItemOnSuccubus(itemId, succubusId) { return consumeItemByStory(itemId, succubusId); }
-
-/* ---------- 道具商店 ---------- */
-const SHOP_INFO = {
-  official:    { name: "官方道具行",     desc: "高塔區的官方道具行，明碼標價、童叟無欺。", riskLabel: "正規" },
-  blackmarket: { name: "暗巷黑市道具鋪", desc: "暗巷深處的祕密鋪子，只賣些見不得光的玩意。", riskLabel: "違禁" }
-};
-
-const SHOP_ITEM_SOURCE = {
-  soothe_candy: "official", herbal_tea: "official", aroma_oil: "official",
-  honey_sweet: "official", calming_incense: "official",
-  soft_whip: "official", crimson_gag: "official", night_beads: "official",
-  velvet_rope: "official", silk_ribbon: "official", feather_duster: "official",
-  candle_wax: "official", silver_collar: "official",
-  onyx_blindfold: "official", silver_bell_clips: "official",
-  tower_page: "official",
-  oldtown_incense: "blackmarket",
-  charm_essence: "blackmarket", abyss_spirit: "blackmarket",
-  codex1: "blackmarket", codex2: "blackmarket", codex3: "blackmarket",
-  bm_spiked_rod: "blackmarket", bm_blood_clips: "blackmarket",
-  bm_tri_shackle: "blackmarket", bm_iron_mask: "blackmarket", bm_twin_serpent: "blackmarket"
-};
-
-function shopItems(type) {
-  return ITEMS.filter(it => SHOP_ITEM_SOURCE[it.id] === type);
-}
-
-function buyItem(itemId) {
-  const it = getItem(itemId);
-  if (!it) return false;
-  if (S.master.gold < it.price) {
-    pushLog("system", `你的錢袋不夠沉，還差 ${it.price - S.master.gold} 金。`);
-    return false;
-  }
-  if (S.master.rank < it.rankReq) {
-    pushLog("system", `你的階級尚不足以駕馭「${it.name}」，需晉升至【${getRank(it.rankReq).name}】。`);
-    return false;
-  }
-  S.master.gold -= it.price;
-  addItem(itemId);
-  pushLog("system", `你購入了「${it.name}」。${it.desc}`);
-  return true;
-}
-
-/* ---------- AI 指令結算 ---------- */
-function processAICommands(cmd) {
-  if (!cmd) return;
-
-  if (cmd.narrative && typeof appendStoryMessage === "function") {
-    appendStoryMessage("story", cmd.narrative);
-  }
-
-  if (Array.isArray(cmd.commands)) {
-    for (const c of cmd.commands) {
-      if (!c) continue;
-      switch (c.type) {
-        case "item":
-          consumeItemByStory(c.itemId, c.succubusId);
-          break;
-        case "stat": {
-          const suc = getSuccubus(c.succubusId) || currentSuccubus();
-          if (suc && c.delta) applyEffects(suc, c.delta);
-          break;
-        }
-        case "time": advanceTime(c.phases || 1); break;
-        case "gold": S.master.gold = Math.max(0, S.master.gold + (c.amount || 0)); break;
-        case "hp": S.master.hp = clamp(S.master.hp + (c.amount || 0), 0, S.master.maxHp); break;
-        case "exp": addMasterExp(c.amount || 0); break;
-      }
-    }
-  }
-
-  if (Array.isArray(cmd.choices) && cmd.choices.length) S.currentChoices = cmd.choices;
-  if (typeof renderAll === "function") renderAll();
-}
-
-/* ---------- 日誌 ---------- */
-function pushLog(type, text) {
-  if (!S.logs) S.logs = [];
-  S.logs.push({ type, text, t: Date.now() });
-}
-
-/* ---------- 存檔 ---------- */
-const SAVE_KEY = "ck_save_v4";
-
-function saveGame() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); return true; }
-  catch (e) { return false; }
-}
-
-function loadGame() {
-  try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) {
-      S = JSON.parse(raw);
-      S.market = { type: null, candidates: [], selectedId: null, cache: {} };
-      S.sellState = null;
-      S.hasPurchased = !!S.hasPurchased || (S.succubi && S.succubi.length > 0);
-      S.currentChoices = S.currentChoices || [];
-      S.logs = S.logs || [];
-      S.facts = S.facts || [];
-      return true;
-    }
-  } catch (e) {}
-  return false;
-}
-
-function resetGame() {
-  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
-  S = defaultState();
-  if (typeof renderAll === "function") renderAll();
+function doSignContract(succubusId) {
+  const ok = signPermanentContract(succubusId);
+  closeModal("modal-contract");
+  renderAll();
+  showToast(ok ? "永久之契，落定。" : "締約未成。");
 }

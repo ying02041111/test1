@@ -73,7 +73,7 @@ function renderChoices() {
   box.innerHTML = S.currentChoices.map((c, i) => `<button class="choice-btn" data-i="${i}">${escapeHtml(c)}</button>`).join("");
 }
 
-/* ---------- 主控檔案 ---------- */
+/* ---------- 主控 ---------- */
 function renderMaster() {
   const m = S.master;
   const rank = getRank(m.rank);
@@ -88,7 +88,7 @@ function renderMaster() {
   document.getElementById("master-persona").value = m.persona || "";
 }
 
-/* ---------- 魅魔狀態 ---------- */
+/* ---------- 魅魔 ---------- */
 function statItem(label, val, cls) {
   return `<div class="stat-item">
     <div class="stat-label"><span>${label}</span><b>${val}</b></div>
@@ -149,24 +149,31 @@ function renderInventory() {
   }).join("");
 }
 
-/* ---------- 房產 ---------- */
+/* ---------- 房產（含階級限制） ---------- */
 function renderProperty() {
   const box = document.getElementById("property-list");
   box.innerHTML = DISTRICTS.map(d => {
-    const openCls = S.currentDistrictId === d.id ? " open" : "";
+    const rankReq = districtRankReq(d.id);
+    const locked = S.master.rank < rankReq;
+    const openCls = (!locked && S.currentDistrictId === d.id) ? " open" : "";
+    const badge = locked
+      ? `<span class="tag tag-risk">需 ${getRank(rankReq).name}</span>`
+      : (d.isHigh ? '<span class="tag tag-safe">高級街區</span>' : '');
     return `<div class="district-block${openCls}" data-district="${d.id}">
       <div class="district-head" onclick="toggleDistrict('${d.id}')">
-        <div><div class="name">${escapeHtml(d.name)} ${d.isHigh ? '<span class="tag tag-safe">高級街區</span>' : ""}</div><div class="desc">${escapeHtml(d.desc)}</div></div>
+        <div><div class="name">${escapeHtml(d.name)} ${badge}</div><div class="desc">${escapeHtml(d.desc)}</div></div>
       </div>
       <div class="district-body">
-        ${d.houses.map(h => {
-          const owned = S.ownedHouses.includes(h.id);
-          const current = S.currentHouseId === h.id;
-          return `<div class="house-row">
-            <div class="info"><div class="name">${escapeHtml(h.name)} ${current ? '<span class="tag tag-safe">現居</span>' : ""}</div><div class="desc">${escapeHtml(h.desc)}</div></div>
-            ${current ? "" : owned ? `<button class="btn" onclick="handleMoveHouse('${h.id}')">遷入</button>` : `<button class="btn btn-accent" onclick="handleBuyHouse('${h.id}')">${h.price} 金 購入</button>`}
-          </div>`;
-        }).join("")}
+        ${locked
+          ? `<div style="font-size:12.5px;color:var(--ink-soft)">你的名望尚不足以踏足此地，需晉升至【${getRank(rankReq).name}】。</div>`
+          : d.houses.map(h => {
+              const owned = S.ownedHouses.includes(h.id);
+              const current = S.currentHouseId === h.id;
+              return `<div class="house-row">
+                <div class="info"><div class="name">${escapeHtml(h.name)} ${current ? '<span class="tag tag-safe">現居</span>' : ""}</div><div class="desc">${escapeHtml(h.desc)}</div></div>
+                ${current ? "" : owned ? `<button class="btn" onclick="handleMoveHouse('${h.id}')">遷入</button>` : `<button class="btn btn-accent" onclick="handleBuyHouse('${h.id}')">${h.price} 金 購入</button>`}
+              </div>`;
+            }).join("")}
       </div>
     </div>`;
   }).join("");
@@ -175,10 +182,16 @@ function renderProperty() {
 /* ---------- 市場（購買魅魔） ---------- */
 function openMarketChoiceModal() {
   document.getElementById("market-title").textContent = "緋夜市場";
+  const hasSuc = !!S.hasPurchased;
+  const blackBtn = hasSuc
+    ? `<button class="btn" onclick="openMarket('blackmarket')">暗巷黑市 <span class="tag tag-risk">高風險</span></button>`
+    : `<button class="btn" disabled>暗巷黑市 <span class="tag tag-risk">未開放</span></button>`;
+  const note = hasSuc ? "" : `<p style="font-size:12.5px;color:var(--ink-soft)">初入緋夜，暗巷黑市還不對你敞開。先購得第一隻魅魔，才有人為你引路。</p>`;
   document.getElementById("market-body").innerHTML = `
     <div class="market-intro">今夜，你要踏入哪一扇門？</div>
     <button class="btn" onclick="openMarket('official')">官方契約市場 <span class="tag tag-safe">低風險</span></button>
-    <button class="btn" onclick="openMarket('blackmarket')">暗巷黑市 <span class="tag tag-risk">高風險</span></button>`;
+    ${blackBtn}
+    ${note}`;
   openModal("modal-market");
 }
 

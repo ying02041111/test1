@@ -24,7 +24,6 @@ function showToast(msg) {
   toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
-/* ---------- 等待提示 ---------- */
 let thinkingEl = null;
 function showThinking() {
   const log = document.getElementById("story-log");
@@ -120,11 +119,12 @@ function renderSuccubi() {
   box.innerHTML = S.succubi.map(s => {
     const perm = s.contract === "permanent";
     const defTag = s.defect ? `<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>` : "";
+    const presTag = s.present ? '<span class="tag tag-safe">在身邊</span>' : `<span class="tag tag-muted">不在${s.place ? "・" + escapeHtml(s.place) : ""}</span>`;
     return `<div class="succubus-card" onclick="openSuccubusDetail('${s.id}')">
       <div class="succubus-top">
         <div class="avatar">${escapeHtml(s.name.charAt(0))}</div>
         <div>
-          <div class="succubus-name">${escapeHtml(s.name)} ${perm ? '<span class="tag tag-safe">永久契約</span>' : '<span class="tag tag-muted">暫時契約</span>'}</div>
+          <div class="succubus-name">${escapeHtml(s.name)} ${perm ? '<span class="tag tag-safe">永久契約</span>' : '<span class="tag tag-muted">暫時契約</span>'} ${presTag}</div>
           <div class="succubus-sub">${escapeHtml(s.raceName)} · ${escapeHtml(s.personalityName)} ${defTag}</div>
         </div>
       </div>
@@ -148,9 +148,10 @@ function openSuccubusDetail(id) {
   document.getElementById("succubus-title").textContent = s.name;
   const perm = s.contract === "permanent";
   const riskTag = s.risk ? `<span class="tag ${s.risk === "低風險" ? "tag-safe" : "tag-risk"}">${s.risk}</span>` : "";
+  const presTag = s.present ? '<span class="tag tag-safe">在身邊</span>' : `<span class="tag tag-muted">不在${s.place ? "・" + escapeHtml(s.place) : ""}</span>`;
   document.getElementById("succubus-body").innerHTML = `
     <div class="candidate-detail">
-      <div class="row"><b>${escapeHtml(s.name)}</b>　<span class="tag ${perm ? "tag-safe" : "tag-muted"}">${perm ? "永久契約" : "暫時契約"}</span> ${riskTag}</div>
+      <div class="row"><b>${escapeHtml(s.name)}</b>　<span class="tag ${perm ? "tag-safe" : "tag-muted"}">${perm ? "永久契約" : "暫時契約"}</span> ${presTag} ${riskTag}</div>
       <div class="row"><b>種族</b>　${escapeHtml(s.raceName)}　${escapeHtml(s.raceDesc || "")}</div>
       <div class="row"><b>個性</b>　${escapeHtml(s.personalityName)}　${escapeHtml(s.personalityDesc || "")}</div>
       <div class="row"><b>外貌</b>　${escapeHtml(s.appearance || "")}</div>

@@ -3,23 +3,43 @@
    ============================================================ */
 
 const API_SETTINGS_KEY = "ck_api_settings_v1";
+const API_DEFAULTS = { key: "", url: "", model: "", thinking: false, temperature: 0.9, topP: 1.0 };
 
 function getApiSettings() {
-  try { return JSON.parse(localStorage.getItem(API_SETTINGS_KEY) || "{}"); }
-  catch (e) { return {}; }
+  try {
+    const s = JSON.parse(localStorage.getItem(API_SETTINGS_KEY) || "{}");
+    return Object.assign({}, API_DEFAULTS, s);
+  } catch (e) {
+    return Object.assign({}, API_DEFAULTS);
+  }
 }
 
-function persistApiSettings(cfg) {
-  localStorage.setItem(API_SETTINGS_KEY, JSON.stringify(cfg || {}));
-}
+function persistApiSettings(cfg) { localStorage.setItem(API_SETTINGS_KEY, JSON.stringify(cfg || {})); }
 
-/* 自動補全端點：填 Base URL 或完整位址都能用 */
 function normalizeApiUrl(url) {
   let u = String(url || "").trim();
   if (!u) return "";
   u = u.replace(/\/+$/, "");
-  if (/chat\/completions/i.test(u)) return u;   // 已含端點（含查詢參數也放行）
-  return u + "/chat/completions";               // 視為 Base URL，自動補上
+  if (/chat\/completions/i.test(u)) return u;
+  return u + "/chat/completions";
+}
+
+function toNum(v, d) { const n = parseFloat(v); return isNaN(n) ? d : n; }
+
+/* 組出請求體（含溫度／Top P／深度思考） */
+function buildRequestBody(cfg, userText, maxTokens) {
+  const body = {
+    model: cfg.model || "gpt-4o-mini",
+    temperature: toNum(cfg.temperature, 0.9),
+    top_p: toNum(cfg.topP, 1.0),
+    messages: [
+      { role: "system", content: buildSystemPrompt() },
+      { role: "user", content: userText }
+    ]
+  };
+  if (maxTokens) body.max_tokens = maxTokens;
+  if (cfg.thinking) body.thinking = { type: "enabled" };
+  return body;
 }
 
 function ownedItemNames() {
@@ -33,6 +53,8 @@ function buildSystemPrompt() {
   const rank = getRank(m.rank);
   const district = getDistrict(S.currentDistrictId);
   const house = getHouse(S.currentHouseId);
+  const locName = (district ? district.name : "緋夜") + (house ? "・" + house.name : "");
+  const nowText = `第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]}`;
 
   const succText = S.succubi.length
     ? S.succubi.map(s => {
@@ -49,15 +71,32 @@ function buildSystemPrompt() {
   return `你是《緋夜飼育錄》的敘事引擎，一款成人向（18+ 氛圍）魅魔飼育文字遊戲的旁白。你只輸出一個合法 JSON 物件，不要輸出任何解釋、前綴或 markdown 程式碼框。
 
 【輸出格式】
-{"narrative":"2~4 句中文敘事","choices":["選項1","選項2","選項3"],"commands":[]}
+{"narrative":"…","choices":["…","…"],"commands":[]}
+
+【時間與地點】
+當前時間：${nowText}；地點：${locName}。
+- 敘事開頭可用一行場景（時間·地點），但時間地點必須與上列完全一致，不可自行另寫日期或別的地名。
+- 地點要有具體描述：街景、光線、氣味、聲響，例如「海風裹著鹹濕的氣味，混著早市攤販的香」。
 
 【文風】
-- 感官化、文學化、露骨暗示但絕不粗俗；用比喻與留白勾出情慾，不寫直白的生殖器名詞。
-- 視情境在「日常」與「親密調教 18+」之間切換；親密場景可寫肌膚、體溫、氣味、顫抖、壓抑的喘息。
-- 敘事以第二人稱「你」展開，聚焦玩家的感知與慾望。
+- 感官化、文學化、露骨暗示但絕不粗俗，不寫直白的生殖器名詞。
+- 以第二人稱「你」展開，聚焦玩家的言語與動作。
+- 對白要標註說話者與語氣：名字：（語氣）「對白」，例如 緋音：（小聲）「……嗯。」
+- 親密場景可寫肌膚、體溫、氣味、顫抖、壓抑的喘息；日常場景則寫環境與互動。
+
+【寫作範例（僅格式參考，勿照抄內容）】
+── 第 9 日 · 上午 · 霓虹港 ──
+「先洗個澡，再帶你出去。」你低聲說。
+緋音的眼睛亮起來，又紅了臉，小聲應道：
+緋音：（小聲）「……嗯。」
+你想怎麼做？
+A. 「嗯，一起。」你脫去外衣，走進水汽裡。
+B. 「你先洗，我在外面等你。」
+C. 走過去，從背後環住她，替她揉洗髮絲。
+D. 「轉過來，我幫你洗。」你低聲。
 
 【調教風格（僅作語氣背景，絕不直接點名）】
-當前風格氣質：${style.name}——${style.desc}。讓敘事與選項的「語氣」貼合這份氣質，但文中與選項中一律不得出現「${style.name}」或「風格」等字眼，更不可寫「用OO風格訓誡」之類的話。
+當前風格氣質：${style.name}——${style.desc}。讓敘事與選項的「語氣」貼合這份氣質，但文中與選項中一律不得出現「${style.name}」或「風格」等字眼。
 
 【魅魔現況】
 ${succText}
@@ -69,11 +108,12 @@ ${itemText}
 - 選項或敘事若要動用道具，只能使用上列物品的「名字」，並以隱晦方式描述其用途；嚴禁出現「情趣玩具」等詞。
 
 【玩家主控】
-階級：${rank.name}；所在：${district ? district.name : "緋夜"}・${house ? house.name : ""}；自訂人設：${personaText}。
+階級：${rank.name}；自訂人設：${personaText}。
 
 【選項規則】
-- 生成 2~3 個選項，必須是第一人稱內心獨白、感性、暗示性的句子，嚴禁選單式口吻（如「前往市場」「使用道具」）。
-- 選項要貼合當前情境與她此刻的狀態，避免每次重複同樣的話。
+- 生成 2~3 個選項，一律是「對話」或「動作」的短句，例如「「過來。」你低聲。」或「伸手托起她的下顎。」
+- 不要寫主控的內心感受或情緒描寫，少用「我」；對話中必要的「我」可用。
+- 選項要貼合當前情境與她此刻的狀態，避免重複。
 
 【指令】
 - commands 可選填，用於結算數值：{"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"stress":0,"hunger":0}}、{"type":"item","itemId":"...","succubusId":"..."}、{"type":"time","phases":1}、{"type":"gold","amount":0}、{"type":"hp","amount":0}、{"type":"exp","amount":0}。
@@ -99,14 +139,7 @@ async function callStoryAI(userText) {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
-      body: JSON.stringify({
-        model: cfg.model || "gpt-4o-mini",
-        temperature: 0.9,
-        messages: [
-          { role: "system", content: buildSystemPrompt() },
-          { role: "user", content: userText }
-        ]
-      })
+      body: JSON.stringify(buildRequestBody(cfg, userText, 700))
     });
     if (!res.ok) return mockNarrativeResponse(userText);
     const data = await res.json();
@@ -124,10 +157,19 @@ async function testApiConnection() {
   if (!cfg.url || !cfg.key) return { ok: false, msg: "請先填妥 API Key 與 URL。" };
   const url = normalizeApiUrl(cfg.url);
   try {
+    const body = {
+      model: cfg.model || "gpt-4o-mini",
+      temperature: toNum(cfg.temperature, 0.9),
+      top_p: toNum(cfg.topP, 1.0),
+      max_tokens: 1,
+      messages: [{ role: "user", content: "ping" }]
+    };
+    if (cfg.thinking) body.thinking = { type: "enabled" };
+
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
-      body: JSON.stringify({ model: cfg.model || "gpt-4o-mini", messages: [{ role: "user", content: "ping" }], max_tokens: 1 })
+      body: JSON.stringify(body)
     });
     if (res.ok) return { ok: true, msg: "連線成功，夜路已通。" };
 
@@ -143,49 +185,51 @@ async function testApiConnection() {
   }
 }
 
-/* ---------- 保底敘事（動態、不重複） ---------- */
+/* ---------- 保底敘事 ---------- */
 const MOCK_SCENES = {
   noSuccubus: [
-    "你的房裡空蕩蕩的，只有燭火在牆上搖。飼育員的手，總得有誰來捧住。緋夜的市場今夜還亮著燈。",
-    "夜風從窗縫漏進來，帶著燈紅街若有似無的香。你還沒有一隻屬於自己的魅魔，這份寂靜，該被打破了。"
+    "你的住處還空蕩蕩的，窗外的燈紅街隱約傳來笑聲與樂聲。緋夜的市場今夜還亮著燈。是該去挑一雙屬於自己的眼睛了。",
+    "夜風從窗縫漏進來，混著舊城石牆的潮氣與遠處攤販的油香。你還沒有一隻屬於自己的魅魔，這份寂靜，該被打破了。"
   ],
   hungerHigh: [
-    "{name} 偎在你腳邊，腹部傳出一聲細細的響。她的眼睛濕漉漉地望向你，飢餓把她的驕傲磨得發軟，連{personalityName}的性子都快要潰堤。",
-    "{name} 的尾尖無精打采地垂著，鼻尖朝你的方向一下一下地嗅。她的飢餓像一簇悶燒的火，把她{appearance}都蒸出了薄薄的緋色。"
+    "{name} 偎在你腳邊，腹部傳出一聲細響。她抬眼望你，眼裡濕漉漉的。\n{name}：（小聲）「主人……我餓了。」",
+    "她的尾尖無精打采地垂著，鼻尖朝你的方向一下一下地嗅。\n{name}：（帶著鼻音）「你身上的味道……好香。」"
   ],
   stressHigh: [
-    "{name} 的肩膀繃得像張滿的弓，{scent}裡混進了一絲焦躁。她避開你的視線，可緊抿的唇卻藏不住顫抖。",
-    "你走近時，{name} 的背脊肉眼可見地僵了一下。她的壓力已經快把最後一點溫順都壓碎了，像一頭隨時會受驚的困獸。"
+    "{name} 的肩膀繃得像張滿的弓。她避開你的視線，緊抿的唇卻藏不住顫抖。",
+    "你走近時，{name} 的背脊僵了一下，像一頭受驚的困獸。\n{name}：（低聲）「……別過來。」"
   ],
   guarded: [
-    "{name} 與你之間隔著一臂的距離，像一道看不見的防線。她的{personalityName}仍倔強地豎著刺，眼裡的戒備還沒化開。",
-    "{name} 沒有靠近，只拿那雙眼睛冷冷地望你。她的好感尚未越過那道檻，你越前進一步，她就越往後縮一寸。"
+    "{name} 與你隔著一臂的距離，像一道看不見的防線。她眼裡的戒備還沒化開。",
+    "她沒有靠近，只拿那雙眼睛冷冷地望你。你越前進一步，她就越往後縮一寸。"
   ],
   intimate: [
-    "{name} 主動蹭進你的掌心，{scent}細細地纏上你的呼吸。破冰之後，她的親暱像融化的蜜，黏稠又燙人。",
+    "{name} 主動蹭進你的掌心，{scent}纏上你的呼吸。破冰之後，她的親暱像融化的蜜。",
     "她仰起臉，{appearance}。此刻的她不再設防，眼裡的柔軟幾乎要把你溺進去。"
   ],
   permanent: [
-    "她頸間的契約痕隱隱發燙。永久之契已將她與你的命數綁在一起，她望向你時，眼底沉著一種只有歸處才有的篤定。",
+    "她頸間的契約痕隱隱發燙。永久之契已將她與你的命數綁在一起，她望向你時，眼底沉著只有歸處才有的篤定。",
     "她安靜地偎在你懷裡，呼吸與你的心跳同頻。自那一夜以血為誓，她看你的眼神，便再沒有離開過。"
   ],
   default: [
     "夜色在窗外漫開，{name} 就這麼待在你身旁，{scent}若有似無地撩撥著你的神經。",
-    "你與 {name} 之間的空氣微微發燙，{personalityName}的她，此刻正用一種你讀不透的眼神看著你。"
+    "你與 {name} 之間的空氣微微發燙。她正用一種你讀不透的眼神看著你。"
   ]
 };
 
 const BASE_CHOICES = [
-  "靠近她，托起她的下顎，逼她直視你的眼睛",
-  "慢條斯理地繞到她身後，指尖若有似無地擦過她的頸側",
-  "俯下身，在她耳畔低語，說你會等她自己求",
-  "解下她的髮，讓那一頭長髮散落在你的膝上",
-  "用拇指摩挲她的唇，感受她顫抖的呼吸",
-  "把她的下巴抬得更高些，審視她眼底的倔強",
-  "不說話，只是靜靜地凝視她，讓沉默把空氣熬得發燙",
-  "牽起她的手，貼上你自己的心口",
-  "勾起她的一綹髮絲，湊到鼻尖輕嗅",
-  "退後一步，看她會不會主動追過來"
+  "「過來。」你朝她抬了抬下巴。",
+  "「今晚想吃點什麼？」你問她。",
+  "伸手托起她的下顎，逼她直視你。",
+  "「把外衣脫了。」你低聲。",
+  "繞到她身後，指尖擦過她的後頸。",
+  "「轉過去。」你淡淡地命令。",
+  "湊近她耳畔：「你身上的味道，很好聞。」",
+  "牽起她的手腕，輕輕一拉。",
+  "「叫我的名字。」",
+  "退後一步，等她主動靠過來。",
+  "「過來坐下。」你拍了拍身旁的位置。",
+  "「說說看，你今晚想要什麼。」"
 ];
 
 let mockCounter = 0;

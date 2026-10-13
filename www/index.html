@@ -8,7 +8,6 @@
 </head>
 <body>
   <div id="app">
-    <!-- 頂部狀態列 -->
     <header id="status-bar">
       <div class="brand">緋夜飼育錄</div>
       <div class="status-meta">
@@ -18,9 +17,7 @@
       </div>
     </header>
 
-    <!-- 主內容 -->
     <main id="view">
-      <!-- 劇情 -->
       <section id="panel-story" class="panel active">
         <div id="story-log" class="story-log"></div>
         <div id="choice-list" class="choice-list"></div>
@@ -30,7 +27,6 @@
         </div>
       </section>
 
-      <!-- 魅魔 -->
       <section id="panel-succubi" class="panel">
         <div class="panel-head">
           <h2>魅魔</h2>
@@ -39,7 +35,6 @@
         <div id="succubi-list" class="succubi-list"></div>
       </section>
 
-      <!-- 主控 -->
       <section id="panel-master" class="panel">
         <div class="card">
           <h2 class="card-title">主控</h2>
@@ -65,7 +60,6 @@
         </div>
       </section>
 
-      <!-- 背包 -->
       <section id="panel-inventory" class="panel">
         <div class="panel-head">
           <h2>背包</h2>
@@ -74,14 +68,12 @@
         <div id="inventory-list" class="inventory-list"></div>
       </section>
 
-      <!-- 房產 -->
       <section id="panel-property" class="panel">
         <div class="panel-head"><h2>房產</h2></div>
         <div id="property-list" class="property-list"></div>
       </section>
     </main>
 
-    <!-- 底部導航（純文字，兩字） -->
     <nav id="bottom-nav">
       <button class="nav-btn active" data-tab="story">劇情</button>
       <button class="nav-btn" data-tab="succubi">魅魔</button>
@@ -113,7 +105,18 @@
     </div>
   </div>
 
-  <!-- 契約確認彈窗（購買／出售／重新開始共用） -->
+  <!-- 魅魔詳情視窗 -->
+  <div id="modal-succubus" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h2 id="succubus-title">魅魔詳情</h2>
+        <button class="modal-close" data-close="modal-succubus">×</button>
+      </div>
+      <div id="succubus-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 契約確認彈窗 -->
   <div id="modal-confirm" class="modal-overlay">
     <div class="modal-dialog modal-dialog-sm">
       <div class="modal-head">
@@ -160,12 +163,27 @@
           <input id="api-key" type="password" placeholder="sk-...">
         </div>
         <div class="field">
-          <label for="api-url">API URL</label>
-          <input id="api-url" type="text" placeholder="https://api.openai.com/v1/chat/completions">
+          <label for="api-url">API URL（Base URL 或完整位址皆可）</label>
+          <input id="api-url" type="text" placeholder="https://api.deepseek.com">
         </div>
         <div class="field">
           <label for="api-model">模型</label>
-          <input id="api-model" type="text" placeholder="gpt-4o-mini">
+          <input id="api-model" type="text" placeholder="deepseek-chat">
+        </div>
+        <div class="field-row">
+          <label for="api-thinking">深度思考</label>
+          <label class="switch">
+            <input id="api-thinking" type="checkbox">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="field">
+          <label>溫度 <span id="temp-val" class="range-val">0.9</span></label>
+          <input id="api-temperature" type="range" min="0" max="2" step="0.1" value="0.9">
+        </div>
+        <div class="field">
+          <label>Top P <span id="topp-val" class="range-val">1.0</span></label>
+          <input id="api-topp" type="range" min="0" max="1" step="0.05" value="1">
         </div>
         <div class="modal-actions">
           <button id="btn-api-test" class="btn">測試連線</button>
@@ -176,7 +194,6 @@
     </div>
   </div>
 
-  <!-- 輕提示 -->
   <div id="toast" class="toast"></div>
 
   <script src="data.js"></script>

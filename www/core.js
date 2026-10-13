@@ -61,6 +61,24 @@ function sceneHeader() {
   return `── 第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]} · ${loc} ──`;
 }
 
+function snapStats(suc) {
+  return { affection: suc.affection, obedience: suc.obedience, stress: suc.stress, hunger: suc.hunger };
+}
+
+function notifyStatChange(suc, before) {
+  if (!suc || !before) return;
+  const parts = [];
+  const add = (label, key) => {
+    const d = suc[key] - before[key];
+    if (d !== 0) parts.push(`${label}${d > 0 ? "+" : ""}${d}`);
+  };
+  add("好感", "affection");
+  add("服從", "obedience");
+  add("壓力", "stress");
+  add("飢餓", "hunger");
+  if (parts.length) pushLog("system", `［${suc.name}］${parts.join("　")}`);
+}
+
 /* ---------- 好感加成 ---------- */
 function calcRelRate(suc) {
   if (!suc) return 1;
@@ -152,11 +170,8 @@ function generateOneCandidate(type, idx) {
 
   if (isOfficial) {
     background = pick(OFFICIAL_BACKGROUNDS);
-    if (idx === 0) {
-      price = 420 + Math.floor(Math.random() * 340);
-    } else {
-      price = 600 + Math.floor(Math.random() * 800);
-    }
+    if (idx === 0) price = 420 + Math.floor(Math.random() * 340);
+    else price = 600 + Math.floor(Math.random() * 800);
   } else {
     background = pick(BLACKMARKET_BACKGROUNDS);
     price = 150 + Math.floor(Math.random() * 450);
@@ -256,11 +271,8 @@ function confirmPurchase() {
 
   if (typeof closeAllModals === "function") closeAllModals();
   if (typeof purchaseReaction === "function") {
-    const r = purchaseReaction(suc);
-    if (r && typeof appendStoryMessage === "function") {
-      appendStoryMessage("system", sceneHeader());
-      appendStoryMessage("story", r.narrative);
-    }
+    const r = purchaseReaction(suc); // 內含「契約所帶離」場景與當前時間
+    if (r && typeof appendStoryMessage === "function") appendStoryMessage("story", r.narrative);
     if (r) S.currentChoices = r.choices || [];
   }
   pushLog("system", `契約成立。${suc.name} 從此納入你的名下，${suc.risk}的出身，往後都得由你負責。`);
@@ -372,12 +384,14 @@ function consumeItemByStory(itemId, succubusId) {
   const item = getItem(itemId);
   const suc = getSuccubus(succubusId) || currentSuccubus();
   if (item && suc) {
+    const before = snapStats(suc);
     applyEffects(suc, item.effects);
     if (item.masterHp) {
       S.master.hp = clamp(S.master.hp + item.masterHp, 0, S.master.maxHp);
       pushLog("system", `駕馭「${item.name}」耗去了你 ${-item.masterHp} 點體力。`);
     }
     pushLog("story", `你使用了「${item.name}」。${item.desc}`);
+    notifyStatChange(suc, before);
     addMasterExp(3);
   }
   return true;
@@ -441,7 +455,11 @@ function processAICommands(cmd) {
         case "item": consumeItemByStory(c.itemId, c.succubusId); break;
         case "stat": {
           const suc = getSuccubus(c.succubusId) || currentSuccubus();
-          if (suc && c.delta) applyEffects(suc, c.delta);
+          if (suc && c.delta) {
+            const before = snapStats(suc);
+            applyEffects(suc, c.delta);
+            notifyStatChange(suc, before);
+          }
           break;
         }
         case "time": advanceTime(c.phases || 1); break;

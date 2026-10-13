@@ -3,7 +3,7 @@
    ============================================================ */
 
 const API_SETTINGS_KEY = "ck_api_settings_v1";
-const API_DEFAULTS = { key: "", url: "", model: "", thinking: false, temperature: 0.9, topP: 1.0 };
+const API_DEFAULTS = { key: "", url: "", model: "", thinking: false, reasoningEffort: "high", temperature: 0.9, topP: 1.0 };
 
 function getApiSettings() {
   try {
@@ -26,7 +26,6 @@ function normalizeApiUrl(url) {
 
 function toNum(v, d) { const n = parseFloat(v); return isNaN(n) ? d : n; }
 
-/* 診斷：把 AI 失敗原因顯示在劇情裡 */
 function aiDiag(msg) {
   const full = "［AI］" + msg;
   try {
@@ -35,19 +34,29 @@ function aiDiag(msg) {
   } catch (_) {}
 }
 
-function buildRequestBody(cfg, userText, maxTokens) {
-  const body = {
+/* 送出：thinking 直接放 body（等同 SDK 的 extra_body）；不支援就自動拿掉重試 */
+async function sendChat(url, cfg, messages, maxTokens) {
+  const headers = { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key };
+  const on = !!cfg.thinking;
+
+  const base = {
     model: cfg.model || "gpt-4o-mini",
     temperature: toNum(cfg.temperature, 0.9),
     top_p: toNum(cfg.topP, 1.0),
-    messages: [
-      { role: "system", content: buildSystemPrompt() },
-      { role: "user", content: userText }
-    ]
+    messages: messages
   };
-  if (maxTokens) body.max_tokens = maxTokens;
-  if (cfg.thinking) body.thinking = { type: "enabled" };
-  return body;
+  if (maxTokens) base.max_tokens = maxTokens;
+
+  const body = Object.assign({}, base, { thinking: { type: on ? "enabled" : "disabled" } });
+  if (on) body.reasoning_effort = cfg.reasoningEffort || "high";
+
+  let res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  if (!res.ok) {
+    // 相容不認 thinking 欄位的服務：拿掉後再試一次
+    const res2 = await fetch(url, { method: "POST", headers, body: JSON.stringify(base) });
+    if (res2.ok || res2.status !== res.status) return res2;
+  }
+  return res;
 }
 
 function ownedItemNames() {
@@ -77,20 +86,24 @@ function buildSystemPrompt() {
   const factsText = (S.facts && S.facts.length) ? "\n【玩家已知事實】" + S.facts.join("；") : "";
 
   return `你是《緋夜飼育錄》的敘事引擎，一款成人向（18+ 氛圍）魅魔飼育文字遊戲的旁白。
-你「只能」輸出一個合法的 JSON 物件，不要輸出任何解釋、前言或 markdown 程式碼框。
-JSON 內所有字串的換行，一律用 \n 表示，不可直接斷行。
+你「只能」輸出一個合法的 JSON 物件。回應的第一個字元必須是 {，最後一個字元必須是 }。
+不要輸出任何思考過程、解釋或 markdown 程式碼框。JSON 內字串的換行一律用 \n 表示。
+
+【務必精簡】
+- 整段回覆盡量短：narrative 2~4 句，choices 2~3 個（每個 25 字內），commands 能省則省。
+- 順序固定：narrative → choices → commands，確保篇幅有限時敘事與選項也能寫完。
 
 【輸出格式】
 {"narrative":"…","choices":["…","…"],"commands":[]}
 
 【時間與地點】
 當前時間：${nowText}；地點：${locName}。
-- 敘事開頭可用一行場景（時間·地點），但時間地點必須與上列完全一致，不可自行另寫日期或別的地名。
-- 地點要有具體描述：街景、光線、氣味、聲響，例如「海風裹著鹹濕的氣味，混著早市攤販的香」。
+- 敘事開頭用一行場景（時間·地點），必須與上列完全一致。
+- 地點要有具體描述：街景、光線、氣味、聲響。
 
 【文風】
 - 感官化、文學化、露骨暗示但絕不粗俗，不寫直白的生殖器名詞。
-- 以第二人稱「你」展開，聚焦玩家的言語與動作。
+- 以第二人稱「你」展開。
 - 對白要標註說話者與語氣：名字：（語氣）「對白」，例如 緋音：（小聲）「……嗯。」
 - 親密場景可寫肌膚、體溫、氣味、顫抖、壓抑的喘息；日常場景則寫環境與互動。
 
@@ -106,7 +119,7 @@ C. 走過去，從背後環住她，替她揉洗髮絲。
 D. 「轉過來，我幫你洗。」你低聲。
 
 【調教風格（僅作語氣背景，絕不直接點名）】
-當前風格氣質：${style.name}——${style.desc}。讓敘事與選項的「語氣」貼合這份氣質，但文中與選項中一律不得出現「${style.name}」或「風格」等字眼。
+當前風格氣質：${style.name}——${style.desc}。讓語氣貼合，但文中與選項中不得出現「${style.name}」或「風格」等字眼。
 
 【魅魔現況】
 ${succText}
@@ -115,23 +128,23 @@ ${succText}
 
 【玩家背包（僅可引用下列道具，嚴禁提及未擁有的器具）】
 ${itemText}
-- 選項或敘事若要動用道具，只能使用上列物品的「名字」，並以隱晦方式描述其用途；嚴禁出現「情趣玩具」等詞。
+- 選項或敘事若要動用道具，只能使用上列物品的「名字」，並以隱晦方式描述；嚴禁出現「情趣玩具」等詞。
 
 【玩家主控】
 階級：${rank.name}；自訂人設：${personaText}。
 
 【選項規則】
-- 生成 2~3 個選項，一律是「對話」或「動作」的短句，例如「「過來。」你低聲。」或「伸手托起她的下顎。」
-- 不要寫主控的內心感受或情緒描寫，少用「我」；對話中必要的「我」可用。
-- 選項要貼合當前情境與她此刻的狀態，避免重複。
+- 生成 2~3 個選項，一律是「對話」或「動作」的短句。
+- 不要寫主控的內心感受或情緒描寫，少用「我」。
+- 選項要貼合當前情境，避免重複。
 
 【指令】
-- commands 可選填，用於結算數值：{"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"stress":0,"hunger":0}}、{"type":"item","itemId":"...","succubusId":"..."}、{"type":"time","phases":1}、{"type":"gold","amount":0}、{"type":"hp","amount":0}、{"type":"exp","amount":0}。
-- 數值變動幅度宜小（單項 -5 ~ +5 之間）。使用道具時 itemId 必須在上列背包中。
+- commands 可選填：{"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"stress":0,"hunger":0}}、{"type":"item","itemId":"...","succubusId":"..."}、{"type":"time","phases":1}、{"type":"gold","amount":0}、{"type":"hp","amount":0}、{"type":"exp","amount":0}。
+- 數值變動幅度宜小（單項 -5 ~ +5）。使用道具時 itemId 必須在上列背包中。
 ${factsText}`;
 }
 
-/* ---------- JSON 寬鬆解析 ---------- */
+/* ---------- JSON 寬鬆解析（含截斷修補） ---------- */
 function extractJsonObj(t) {
   const start = t.indexOf("{");
   if (start === -1) return null;
@@ -171,27 +184,52 @@ function escapeCtrlInStrings(raw) {
   return out;
 }
 
+function salvagePartial(t) {
+  const nm = t.match(/"narrative"\s*:\s*"([\s\S]*)/);
+  if (!nm) return null;
+  const raw = nm[1];
+  let out = "", esc = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (esc) {
+      if (ch === "n") out += "\n";
+      else if (ch === "r") out += "\r";
+      else if (ch === "t") out += "\t";
+      else if (ch === '"') out += '"';
+      else if (ch === "\\") out += "\\";
+      else out += ch;
+      esc = false;
+      continue;
+    }
+    if (ch === "\\") { esc = true; continue; }
+    if (ch === '"') break;
+    out += ch;
+  }
+  out = out.replace(/\s+$/, "");
+  if (!out) return null;
+
+  let choices = [];
+  const cm = t.match(/"choices"\s*:\s*\[([\s\S]*)/);
+  if (cm) {
+    const arr = cm[1].match(/"((?:[^"\\]|\\.)*)"/g);
+    if (arr) {
+      choices = arr.map(s => s.slice(1, -1)
+        .replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\t/g, "\t")
+        .replace(/\\"/g, '"').replace(/\\\\/g, "\\")).filter(Boolean);
+    }
+  }
+  return { narrative: out, choices: choices, commands: [] };
+}
+
 function parseAIJson(text) {
   if (!text) return null;
   const t = String(text).trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   const objText = extractJsonObj(t) || t;
 
-  try { return JSON.parse(objText); } catch (_) {}
-  try { return JSON.parse(escapeCtrlInStrings(objText)); } catch (_) {}
+  try { const j = JSON.parse(objText); if (j && (j.narrative || (Array.isArray(j.choices) && j.choices.length))) return j; } catch (_) {}
+  try { const j = JSON.parse(escapeCtrlInStrings(objText)); if (j && (j.narrative || (Array.isArray(j.choices) && j.choices.length))) return j; } catch (_) {}
 
-  // 最後手段：硬抽 narrative 與 choices
-  const salv = {};
-  const nm = t.match(/"narrative"\s*:\s*"([\s\S]*?)"\s*,\s*"choices"/);
-  if (nm) salv.narrative = nm[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
-  const cm = t.match(/"choices"\s*:\s*\[([\s\S]*?)\]/);
-  if (cm) {
-    const arr = cm[1].match(/"([\s\S]*?)"/g);
-    if (arr) salv.choices = arr.map(s => s.slice(1, -1).replace(/\\n/g, "\n").replace(/\\"/g, '"'));
-  }
-  if (salv.narrative && salv.choices && salv.choices.length) {
-    return { narrative: salv.narrative, choices: salv.choices, commands: [] };
-  }
-  return null;
+  return salvagePartial(t);
 }
 
 /* ---------- 呼叫外部 AI ---------- */
@@ -205,11 +243,10 @@ async function callStoryAI(userText) {
   const url = normalizeApiUrl(cfg.url);
   let res;
   try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
-      body: JSON.stringify(buildRequestBody(cfg, userText, 1200))
-    });
+    res = await sendChat(url, cfg, [
+      { role: "system", content: buildSystemPrompt() },
+      { role: "user", content: userText }
+    ]);
   } catch (e) {
     aiDiag("連線失敗（網路或跨域）：" + (e && e.message ? e.message : e));
     return mockNarrativeResponse(userText);
@@ -226,20 +263,29 @@ async function callStoryAI(userText) {
   try { data = await res.json(); }
   catch (e) { aiDiag("回應不是 JSON。"); return mockNarrativeResponse(userText); }
 
-  const msg = data && data.choices && data.choices[0] && data.choices[0].message;
+  const choice = data && data.choices && data.choices[0];
+  const msg = choice && choice.message;
   const content = msg ? (msg.content || "") : "";
-  const parsed = parseAIJson(content);
-  if (!parsed) {
-    const c = (content || "").trim();
-    if (!c) {
-      const hasThink = !!(msg && (msg.reasoning_content || msg.reasoning));
-      aiDiag("AI 沒有回正文" + (hasThink ? "（只有思考內容，可能被長度限制截斷：請關閉深度思考或提高上限）" : "（回覆為空）"));
-    } else {
-      aiDiag(`AI 回覆無法解析（共 ${c.length} 字，前 250 字）：` + c.slice(0, 250));
+  const think = msg ? (msg.reasoning_content || msg.reasoning || "") : "";
+  const finish = choice ? choice.finish_reason : "";
+
+  let parsed = parseAIJson(content);
+  if (!parsed && !String(content).trim() && think) parsed = parseAIJson(think);
+
+  if (parsed) {
+    if (!Array.isArray(parsed.choices) || !parsed.choices.length) {
+      parsed.choices = buildMockChoices(currentSuccubus());
     }
-    return mockNarrativeResponse(userText);
+    return parsed;
   }
-  return parsed;
+
+  const rawC = String(content || "").trim();
+  let info = "AI 回覆無法解析";
+  if (finish) info += `（finish=${finish}）`;
+  info += rawC ? "：" + rawC.slice(0, 200) : "：正文為空";
+  if (!rawC && think) info += `（只有思考內容，請確認已關閉思考）`;
+  aiDiag(info);
+  return mockNarrativeResponse(userText);
 }
 
 /* ---------- 連線測試 ---------- */
@@ -248,20 +294,7 @@ async function testApiConnection() {
   if (!cfg.url || !cfg.key) return { ok: false, msg: "請先填妥 API Key 與 URL。" };
   const url = normalizeApiUrl(cfg.url);
   try {
-    const body = {
-      model: cfg.model || "gpt-4o-mini",
-      temperature: toNum(cfg.temperature, 0.9),
-      top_p: toNum(cfg.topP, 1.0),
-      max_tokens: 1,
-      messages: [{ role: "user", content: "ping" }]
-    };
-    if (cfg.thinking) body.thinking = { type: "enabled" };
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
-      body: JSON.stringify(body)
-    });
+    const res = await sendChat(url, cfg, [{ role: "user", content: "ping" }], 1);
     if (res.ok) return { ok: true, msg: "連線成功，夜路已通（" + url + "）。" };
 
     const txt = await res.text();
@@ -269,7 +302,7 @@ async function testApiConnection() {
     if (res.status === 404) hint = "（404＝找不到端點：URL 路徑不對）";
     else if (res.status === 401) hint = "（401＝API Key 無效或未授權）";
     else if (res.status === 429) hint = "（429＝請求太頻繁或額度不足）";
-    else if (res.status === 400) hint = "（400＝模型名稱或參數有誤，可先把深度思考關掉試試）";
+    else if (res.status === 400) hint = "（400＝模型名稱或參數有誤）";
     return { ok: false, msg: `連線失敗：${res.status}${hint} ${(txt || "").slice(0, 90)}` };
   } catch (e) {
     return { ok: false, msg: "連線失敗（無法觸及伺服器）：" + e.message };

@@ -24,6 +24,21 @@ function showToast(msg) {
   toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
+/* ---------- 等待提示 ---------- */
+let thinkingEl = null;
+function showThinking() {
+  const log = document.getElementById("story-log");
+  if (!log) return;
+  thinkingEl = document.createElement("div");
+  thinkingEl.className = "msg msg-system thinking";
+  thinkingEl.textContent = "……";
+  log.appendChild(thinkingEl);
+  log.scrollTop = log.scrollHeight;
+}
+function hideThinking() {
+  if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+}
+
 /* ---------- 總渲染 ---------- */
 function renderAll() {
   renderStatusBar();
@@ -105,7 +120,7 @@ function renderSuccubi() {
   box.innerHTML = S.succubi.map(s => {
     const perm = s.contract === "permanent";
     const defTag = s.defect ? `<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>` : "";
-    return `<div class="succubus-card">
+    return `<div class="succubus-card" onclick="openSuccubusDetail('${s.id}')">
       <div class="succubus-top">
         <div class="avatar">${escapeHtml(s.name.charAt(0))}</div>
         <div>
@@ -120,11 +135,36 @@ function renderSuccubi() {
         ${statItem("飢餓", s.hunger, "bar-hunger")}
       </div>
       <div class="succubus-actions">
-        ${perm ? "" : `<button class="btn" onclick="openSellFlow('${s.id}')">契約轉讓</button>`}
-        ${perm ? "" : `<button class="btn" onclick="openContractFlow('${s.id}')">簽訂永久契約</button>`}
+        ${perm ? "" : `<button class="btn" onclick="event.stopPropagation(); openSellFlow('${s.id}')">契約轉讓</button>`}
+        ${perm ? "" : `<button class="btn" onclick="event.stopPropagation(); openContractFlow('${s.id}')">簽訂永久契約</button>`}
       </div>
     </div>`;
   }).join("");
+}
+
+function openSuccubusDetail(id) {
+  const s = getSuccubus(id);
+  if (!s) return;
+  document.getElementById("succubus-title").textContent = s.name;
+  const perm = s.contract === "permanent";
+  const riskTag = s.risk ? `<span class="tag ${s.risk === "低風險" ? "tag-safe" : "tag-risk"}">${s.risk}</span>` : "";
+  document.getElementById("succubus-body").innerHTML = `
+    <div class="candidate-detail">
+      <div class="row"><b>${escapeHtml(s.name)}</b>　<span class="tag ${perm ? "tag-safe" : "tag-muted"}">${perm ? "永久契約" : "暫時契約"}</span> ${riskTag}</div>
+      <div class="row"><b>種族</b>　${escapeHtml(s.raceName)}　${escapeHtml(s.raceDesc || "")}</div>
+      <div class="row"><b>個性</b>　${escapeHtml(s.personalityName)}　${escapeHtml(s.personalityDesc || "")}</div>
+      <div class="row"><b>外貌</b>　${escapeHtml(s.appearance || "")}</div>
+      <div class="row"><b>氣味</b>　${escapeHtml(s.scent || "")}</div>
+      ${s.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>　${escapeHtml(s.defect.desc || "")}</div>` : ""}
+      ${s.background ? `<div class="row"><b>來歷</b>　${escapeHtml(s.background)}</div>` : ""}
+      <div class="stat-grid">
+        ${statItem("好感", s.affection, "bar-affection")}
+        ${statItem("服從", s.obedience, "bar-obedience")}
+        ${statItem("壓力", s.stress, "bar-stress")}
+        ${statItem("飢餓", s.hunger, "bar-hunger")}
+      </div>
+    </div>`;
+  openModal("modal-succubus");
 }
 
 /* ---------- 背包 ---------- */
@@ -149,7 +189,7 @@ function renderInventory() {
   }).join("");
 }
 
-/* ---------- 房產（含階級限制） ---------- */
+/* ---------- 房產 ---------- */
 function renderProperty() {
   const box = document.getElementById("property-list");
   box.innerHTML = DISTRICTS.map(d => {
@@ -179,7 +219,7 @@ function renderProperty() {
   }).join("");
 }
 
-/* ---------- 市場（購買魅魔） ---------- */
+/* ---------- 市場 ---------- */
 function openMarketChoiceModal() {
   document.getElementById("market-title").textContent = "緋夜市場";
   const hasSuc = !!S.hasPurchased;

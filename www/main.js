@@ -1,5 +1,5 @@
 /* ============================================================
-   《緋夜飼育錄》主流程 main.js（防呆版）
+   《緋夜飼育錄》主流程 main.js
    ============================================================ */
 
 function $(id) { return document.getElementById(id); }
@@ -83,7 +83,7 @@ function handleSendAction() {
   if (!text) return;
   field.value = "";
 
-  if (handlePsCommand(text)) return; // ps. 指令：不當作對話
+  if (handlePsCommand(text)) return;
 
   appendStoryMessage("player", text);
   proceed(text);
@@ -94,33 +94,47 @@ function handleChoiceClick(text) {
   proceed(text);
 }
 
-/* ps. 開頭＝給 AI 的長期指令 */
+/* ps. 開頭＝給 AI 的長期指令（更寬鬆比對 + 明確回饋） */
 function handlePsCommand(text) {
-  const body = text.replace(/^\s*ps\s*[.。．:：,，]?\s*/i, "");
-  if (body === text) return false; // 不是 ps. 開頭
+  let body = text.replace(/^\s*ps\s*[.。．:：,，]?\s*/i, "");
+  if (body === text) return false;   // 不是 ps 開頭
 
-  if (!body) { appendStoryMessage("system", "［指令］請在 ps. 後面寫下內容。"); return true; }
+  const getD = (typeof getDirectives === "function") ? getDirectives : function () { return []; };
+  const setD = (typeof setDirectives === "function") ? setDirectives : function () {};
+  const now = (typeof showToast === "function") ? showToast : function () {};
 
-  const list = getDirectives();
+  body = body.trim();
+  if (!body) {
+    appendStoryMessage("system", "［指令］請在 ps. 後面寫下內容，例如：ps. 主角是女生。");
+    now("請在 ps. 後面寫下內容");
+    return true;
+  }
 
-  if (/刪除|移除|清除|取消|去掉/.test(body)) {
-    if (/全部|所有|一切|清空/.test(body) || /^清除$/.test(body)) {
-      setDirectives([]);
+  let list = (getD() || []).slice();
+
+  if (/刪除|移除|清除|取消|去掉|清空/.test(body)) {
+    if (/全部|所有|一切|清空|全清/.test(body)) {
+      setD([]);
       appendStoryMessage("system", "［指令］已清除所有長期指令。");
+      now("已清除全部長期指令");
     } else {
       const last = list.pop();
-      setDirectives(list);
+      setD(list);
       appendStoryMessage("system", last ? `［指令］已刪除：${last}` : "［指令］目前沒有可刪除的長期指令。");
+      now(last ? "已刪除一條長期指令" : "目前沒有長期指令");
     }
-  } else {
-    list.push(body);
-    setDirectives(list);
-    appendStoryMessage("system", `［指令］已加入長期指令：${body}`);
+    return true;
   }
+
+  list.push(body);
+  setD(list);
+  const idxs = list.map((d, i) => `${i + 1}. ${d}`).join("\n");
+  appendStoryMessage("system", `［指令］已加入長期指令（共 ${list.length} 條）：\n${idxs}`);
+  now(`已加入長期指令（共 ${list.length} 條）`);
   return true;
 }
 
-/* 導覽關鍵字：開對應視窗，但「不中斷 AI 對白回應」 */
+/* 導覽關鍵字：開對應視窗，但不中斷 AI 對白回應 */
 function triggerNav(text) {
   if (!text) return;
   if (/道具店|商店|道具行/.test(text)) { openShopChoice(); return; }
@@ -139,7 +153,7 @@ function maybeUseItemByText(text) {
 
 async function proceed(text) {
   try {
-    triggerNav(text); // 動作（前往商店…）照做，但不影響下面的對白回應
+    triggerNav(text);
 
     const itemId = maybeUseItemByText(text);
     if (itemId) consumeItemByStory(itemId);

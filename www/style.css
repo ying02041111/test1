@@ -36,7 +36,6 @@ body {
   letter-spacing: 0.02em;
 }
 
-/* 固定背景層：比例與位置永遠固定 */
 body::before {
   content: "";
   position: fixed;
@@ -73,27 +72,15 @@ body::before {
 }
 
 .brand { font-size: 15px; font-weight: 700; color: var(--ink-strong); letter-spacing: 0.16em; white-space: nowrap; }
-
 .status-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
-
 .pill { padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-soft); color: var(--ink-strong); font-weight: 600; }
-
 .rank-badge { padding: 3px 10px; border-radius: 999px; background: var(--accent); color: var(--ink-strong); font-weight: 600; }
 
 #view { flex: 1; overflow: hidden; position: relative; }
 
-.panel {
-  display: none;
-  flex-direction: column;
-  height: 100%;
-  padding: 16px;
-  gap: 14px;
-  overflow-y: auto;
-}
-
+.panel { display: none; flex-direction: column; height: 100%; padding: 16px; gap: 14px; overflow-y: auto; }
 .panel.active { display: flex; }
 
-/* 劇情面板：整頁不滑動，改由內部區塊各自滑動 */
 #panel-story { overflow: hidden; }
 
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -110,9 +97,9 @@ body::before {
   gap: 14px;
 }
 
-/* ---------- 劇情 ---------- */
+/* ---------- 劇情：劇情區可壓縮，選項區不被壓縮 ---------- */
 .story-log {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
   display: flex;
@@ -164,11 +151,11 @@ body::before {
 .thinking { animation: blink 1s infinite; }
 @keyframes blink { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 
-/* 選項：太長時可滑動，最高佔 40% */
+/* 選項：固定不被壓縮，最高佔 40%，超過自行滑動 */
 .choice-list {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  max-height: 60%;
+  max-height: 40%;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -233,13 +220,10 @@ body::before {
 }
 
 .btn:hover, .btn:active { background: var(--ink); color: var(--bg); }
-
 .btn-accent { border-color: var(--accent-deep); background: var(--accent); }
 .btn-accent:hover, .btn-accent:active { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
-
 .btn-danger { border-color: var(--accent-warn); color: var(--accent-warn); }
 .btn-danger:hover, .btn-danger:active { background: var(--accent-warn); border-color: var(--accent-warn); color: #fff; }
-
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ---------- 底部導航 ---------- */
@@ -284,9 +268,7 @@ body::before {
 .bar-track { height: 10px; border-radius: 6px; background: rgba(119, 92, 86, 0.12); overflow: hidden; }
 .bar-fill { height: 100%; width: 0%; border-radius: 6px; background: var(--accent-deep); transition: width 0.5s ease; }
 .bar-text { font-size: 12px; color: var(--ink-soft); text-align: right; }
-
 .rank-name { font-size: 14px; font-weight: 700; color: var(--ink-strong); }
-
 .stat-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; color: var(--ink-soft); }
 .stat-row b { color: var(--ink-strong); }
 
@@ -311,37 +293,13 @@ body::before {
 
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .field-row label { font-size: 12.5px; color: var(--ink-soft); letter-spacing: 0.06em; }
-
 .range-val { color: var(--accent-warn); font-weight: 700; }
-
-input[type="range"] {
-  width: 100%;
-  height: 26px;
-  accent-color: var(--accent-deep);
-  cursor: pointer;
-}
+input[type="range"] { width: 100%; height: 26px; accent-color: var(--accent-deep); cursor: pointer; }
 
 .switch { position: relative; display: inline-block; width: 48px; height: 26px; flex: 0 0 48px; }
 .switch input { opacity: 0; width: 0; height: 0; }
-.switch .slider {
-  position: absolute;
-  cursor: pointer;
-  inset: 0;
-  background: rgba(119, 92, 86, 0.25);
-  border-radius: 999px;
-  transition: 0.2s;
-}
-.switch .slider::before {
-  content: "";
-  position: absolute;
-  height: 20px;
-  width: 20px;
-  left: 3px;
-  top: 3px;
-  background: #fff;
-  border-radius: 50%;
-  transition: 0.2s;
-}
+.switch .slider { position: absolute; cursor: pointer; inset: 0; background: rgba(119, 92, 86, 0.25); border-radius: 999px; transition: 0.2s; }
+.switch .slider::before { content: ""; position: absolute; height: 20px; width: 20px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
 .switch input:checked + .slider { background: var(--accent-deep); }
 .switch input:checked + .slider::before { transform: translateX(22px); }
 
@@ -362,7 +320,6 @@ input[type="range"] {
 }
 
 .succubus-card:hover, .succubus-card:active { border-color: var(--accent-deep); }
-
 .succubus-top { display: flex; align-items: center; gap: 12px; }
 
 .avatar {
@@ -381,10 +338,8 @@ input[type="range"] {
 
 .succubus-name { font-size: 14px; font-weight: 700; color: var(--ink-strong); }
 .succubus-sub { font-size: 12px; color: var(--ink-soft); }
-
 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
 .stat-item { display: flex; flex-direction: column; gap: 3px; }
-
 .stat-item .stat-label { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-soft); }
 .stat-item .stat-label b { color: var(--ink-strong); font-weight: 600; }
 
@@ -403,74 +358,27 @@ input[type="range"] {
 .tag-muted { background: rgba(119, 92, 86, 0.10); color: var(--ink-soft); }
 
 /* ---------- 道具卡 ---------- */
-.item-card {
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 14px;
-  box-shadow: 0 2px 8px var(--shadow);
-}
-
-.item-card.codex {
-  border-left: 3px solid var(--accent-deep);
-  background: linear-gradient(180deg, rgba(255, 211, 212, 0.10), var(--bg-soft));
-}
-
+.item-card { background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; box-shadow: 0 2px 8px var(--shadow); }
+.item-card.codex { border-left: 3px solid var(--accent-deep); background: linear-gradient(180deg, rgba(255, 211, 212, 0.10), var(--bg-soft)); }
 .item-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .item-name { font-weight: 700; color: var(--ink-strong); font-size: 13.5px; }
 .item-desc { font-size: 13.5px; color: var(--ink); margin-bottom: 8px; }
 .item-effects { font-size: 12px; color: var(--ink-soft); }
 
 /* ---------- 房產 ---------- */
-.district-block {
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-  box-shadow: 0 2px 8px var(--shadow);
-}
-
-.district-head {
-  padding: 13px 15px;
-  background: rgba(213, 235, 228, 0.35);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
+.district-block { background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 8px var(--shadow); }
+.district-head { padding: 13px 15px; background: rgba(213, 235, 228, 0.35); cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
 .district-head .name { font-weight: 700; color: var(--ink-strong); font-size: 14px; }
 .district-head .desc { font-size: 12px; color: var(--ink-soft); }
-
 .district-body { display: none; padding: 8px 13px 13px; flex-direction: column; gap: 8px; }
 .district-block.open .district-body { display: flex; }
-
-.house-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 4px;
-  border-top: 1px dashed var(--line);
-}
-
+.house-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 4px; border-top: 1px dashed var(--line); }
 .house-row .info { flex: 1; }
 .house-row .name { font-weight: 600; color: var(--ink-strong); font-size: 13.5px; }
 .house-row .desc { font-size: 12px; color: var(--ink-soft); }
 
 /* ---------- 彈窗 ---------- */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 18px;
-  background: rgba(92, 71, 65, 0.42);
-  backdrop-filter: blur(3px);
-  z-index: 50;
-}
-
+.modal-overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 18px; background: rgba(92, 71, 65, 0.42); backdrop-filter: blur(3px); z-index: 50; }
 .modal-overlay.open { display: flex; }
 
 .modal-dialog {
@@ -493,7 +401,6 @@ input[type="range"] {
 }
 
 .modal-dialog-sm { max-width: 340px; }
-
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .modal-head h2 { font-size: 14px; font-weight: 700; color: var(--ink-strong); letter-spacing: 0.12em; }
 
@@ -511,20 +418,11 @@ input[type="range"] {
 }
 
 .modal-close:hover { background: var(--accent); }
-
 .modal-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 18px; border-top: 1px solid var(--line); }
 
 /* ---------- 市場卡片 ---------- */
-.market-intro {
-  font-size: 13.5px;
-  color: var(--ink);
-  background: rgba(213, 235, 228, 0.25);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-}
+.market-intro { font-size: 13.5px; color: var(--ink); background: rgba(213, 235, 228, 0.25); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; }
 
 .market-card {
   background: var(--bg-soft);
@@ -539,15 +437,9 @@ input[type="range"] {
   transition: all 0.18s ease;
 }
 
-.market-card:hover, .market-card:active {
-  border-color: var(--accent-deep);
-  transform: translateY(-1px);
-  box-shadow: 0 5px 14px var(--shadow);
-}
-
+.market-card:hover, .market-card:active { border-color: var(--accent-deep); transform: translateY(-1px); box-shadow: 0 5px 14px var(--shadow); }
 .market-card.official { border-left: 3px solid var(--mint-deep); }
 .market-card.blackmarket { border-left: 3px solid var(--accent-deep); }
-
 .market-card .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .market-card .name { font-weight: 700; color: var(--ink-strong); font-size: 14px; }
 .market-card .price { font-weight: 700; color: var(--accent-warn); white-space: nowrap; }
@@ -592,7 +484,4 @@ input[type="range"] {
 .panel::-webkit-scrollbar-thumb,
 .story-log::-webkit-scrollbar-thumb,
 .choice-list::-webkit-scrollbar-thumb,
-.modal-body::-webkit-scrollbar-thumb {
-  background: rgba(119, 92, 86, 0.25);
-  border-radius: 3px;
-}
+.modal-body::-webkit-scrollbar-thumb { background: rgba(119, 92, 86, 0.25); border-radius: 3px; }

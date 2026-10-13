@@ -1,245 +1,469 @@
-// www/core.js - 核心遊戲狀態管理與計算邏輯
+/* ============================================================
+   《緋夜飼育錄》核心邏輯 core.js
+   狀態、市場、出售、拍賣、永久契約、時間、階級、道具、商店、存檔
+   ============================================================ */
 
-const SAVE_KEY = "ck_save_v4";
+let S = defaultState();
 
-// 初始全域狀態
-let S = {
-    master: {
-        hp: 100,
-        maxHp: 100,
-        gold: 800,
-        exp: 0,
-        rank: 1,
-        style: "dom",      // dom / soft / profit / lust
-        persona: ""        // 玩家自由填寫的主控人設
-    },
+function defaultState() {
+  return {
+    master: { hp: 100, maxHp: 100, gold: 800, exp: 0, rank: 1, style: "gentle", persona: "" },
     day: 1,
-    subPhase: 0, // 0: 清晨, 1: 午後, 2: 傍晚, 3: 深夜
-    currentDistrictId: "d_slums",
-    currentHouseId: "h_attic",
-    ownedHouses: ["h_attic"],
+    subPhase: 0,
+    currentDistrictId: "oldtown",
+    currentHouseId: "oldtown_loft",
+    ownedHouses: ["oldtown_loft"],
     succubi: [],
-    inventory: {
-        snack: 2,
-        tea: 1
-    },
-    currentChoices: [],    // 當前劇情選項
+    inventory: [],
+    currentChoices: [],
     logs: [],
-    summary: "剛抵達薄霧下城區的陰暗閣樓，作為見習飼育員邁出第一步。",
-    facts: ["目前落腳於下城區陰暗閣樓。"]
-};
-
-const SUBPHASE_NAMES = ["清晨", "午後", "傍晚", "深夜"];
-
-// 1. 好感度增長倍率計算 (傲嬌/冷酷在 55 點突破防線後觸發 1.6x 暴衝)
-function calcRelRate(succubus) {
-    const pers = PERSONALITIES.find(p => p.id === succubus.personality.id) || PERSONALITIES[0];
-    if (succubus.relation >= 55) {
-        return pers.contrastRate; // 破防反差暴衝 1.6x
-    }
-    return pers.initialRate; // 55 以前防備森嚴 0.4x
+    summary: "",
+    facts: [],
+    market: { type: null, candidates: [], selectedId: null },
+    sellState: null,
+    started: false
+  };
 }
 
-// 2. 主控經驗值與階級晉升
+function ensureState() { if (!S) S = defaultState(); }
+
+/* ---------- 工具 ---------- */
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function randomName() { return pick(SUCCUBUS_NAMES); }
+function getRank(r) { return MASTER_RANKS.find(x => x.rank === r) || MASTER_RANKS[0]; }
+function getDistrict(id) { return DISTRICTS.find(d => d.id === id); }
+
+function getHouse(houseId) {
+  for (const d of DISTRICTS) {
+    const h = d.houses.find(x => x.id === houseId);
+    if (h) return h;
+  }
+  return null;
+}
+
+function getItem(itemId) { return ITEMS.find(i => i.id === itemId); }
+function hasItem(itemId) { return S.inventory.includes(itemId); }
+function addItem(itemId) { S.inventory.push(itemId); }
+function getSuccubus(id) { return S.succubi.find(s => s.id === id); }
+function currentSuccubus() { return S.succubi.length ? S.succubi[0] : null; }
+function isHighDistrict(id) { const d = getDistrict(id); return d ? !!d.isHigh : false; }
+
+/* ---------- 好感加成：55 前 0.4x，破冰後 1.6x ---------- */
+function calcRelRate(suc) {
+  if (!suc) return 1;
+  return suc.affection >= 55 ? 1.6 : 0.4;
+}
+
+/* ---------- 階級 ---------- */
 function addMasterExp(amount) {
-    S.master.exp += amount;
-    checkMasterRank();
+  if (!S) return;
+  S.master.exp += Math.round(amount);
+  checkMasterRank();
 }
 
 function checkMasterRank() {
-    let targetRankIndex = 0;
-    for (let i = MASTER_RANKS.length - 1; i >= 0; i--) {
-        if (S.master.exp >= MASTER_RANKS[i].reqExp) {
-            targetRankIndex = i;
-            break;
-        }
-    }
-    const newRank = MASTER_RANKS[targetRankIndex].rank;
-    if (newRank > S.master.rank) {
-        S.master.rank = newRank;
-        const rankInfo = MASTER_RANKS[targetRankIndex];
-        pushLog(`【階級晉升】主控實力獲得夜幕認可，晉升為「${rankInfo.title}」(Rank ${newRank})！`);
-    }
+  let r = 1;
+  for (const rank of MASTER_RANKS) if (S.master.exp >= rank.expNeed) r = rank.rank;
+  if (r > S.master.rank) {
+    S.master.rank = r;
+    const info = getRank(r);
+    pushLog("system", `你的名望如夜色蔓延——晉升【${info.name}】。${info.desc}`);
+  }
 }
 
-// 3. 劇情純觸發道具結算 (道具背包不再設點擊使用按鈕，由 AI 判定劇情有使用時底層執行)
-function consumeItemByStory(itemId, succubusId = null) {
-    const item = ITEMS[itemId];
-    if (!item) return { success: false, msg: "查無此道具。" };
-
-    // 檢查背包是否有剩餘
-    if (!S.inventory[itemId] || S.inventory[itemId] <= 0) {
-        return { success: false, msg: `背包中無「${item.name}」。` };
-    }
-
-    // 階級驗證：新手不可駕馭高等級道具
-    if (S.master.rank < item.reqRank) {
-        pushLog(`【階級不足】「${item.name}」需要 Rank ${item.reqRank} 才能駕馭！主控目前階級為 Rank ${S.master.rank}，無法使用。`);
-        return { success: false, msg: "階級不足無法使用" };
-    }
-
-    // 扣除背包數量
-    S.inventory[itemId]--;
-    if (S.inventory[itemId] <= 0) delete S.inventory[itemId];
-
-    // 目標魅魔判定
-    let target = null;
-    if (succubusId) {
-        target = S.succubi.find(s => s.id === succubusId);
-    } else if (S.succubi.length > 0) {
-        target = S.succubi[0];
-    }
-
-    // 結算效果
-    const eff = item.effect;
-    if (eff.masterHp) S.master.hp = Math.min(S.master.maxHp, S.master.hp + eff.masterHp);
-    if (eff.masterHpFull) S.master.hp = S.master.maxHp;
-
-    if (target) {
-        if (eff.relation) {
-            const mult = calcRelRate(target);
-            target.relation = Math.max(0, Math.min(100, Math.round(target.relation + eff.relation * mult)));
-        }
-        if (eff.obedience) target.obedience = Math.max(0, Math.min(100, target.obedience + eff.obedience));
-        if (eff.stress) target.stress = Math.max(0, Math.min(100, target.stress + eff.stress));
-        if (eff.hunger) target.hunger = Math.max(0, Math.min(100, target.hunger + eff.hunger));
-    }
-
-    if (eff.exp) addMasterExp(eff.exp);
-
-    pushLog(`劇情中使用「${item.name}」${target ? `，作用於 ${target.name}` : ""}。(${item.statDesc})`);
-    saveGame();
-    return { success: true, msg: "使用成功" };
+/* ---------- 隨機生成魅魔 ---------- */
+function rollSuccubus(raceKey) {
+  const race = RACES.find(r => r.key === raceKey) || pick(RACES);
+  const p = pick(PERSONALITIES), ap = pick(APPEARANCES), sc = pick(SCENTS);
+  return {
+    id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+    name: randomName(),
+    raceKey: race.key, raceName: race.name, raceDesc: race.desc,
+    appearance: ap, scent: sc,
+    personality: p.id, personalityName: p.name, personalityDesc: p.desc,
+    defect: null,
+    affection: 5, obedience: 10, stress: 10, hunger: 25,
+    origin: "roll", background: "", risk: null,
+    contract: "temporary", storyUnlocked: false
+  };
 }
 
-// 4. 魅魔隨機生成機制 (多維度排列組合，抽中後永久鎖入存檔)
-function rollSuccubus(raceKey = null) {
-    const raceKeys = Object.keys(RACES);
-    const chosenRace = RACES[raceKey || raceKeys[Math.floor(Math.random() * raceKeys.length)]];
-    const pers = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)];
-    const defect = DEFECTS[Math.floor(Math.random() * DEFECTS.length)];
-    const app = APPEARANCES[Math.floor(Math.random() * APPEARANCES.length)];
-    const scent = SCENTS[Math.floor(Math.random() * SCENTS.length)];
-
-    const names = ["莉莉絲", "愛麗拉", "維拉", "克蘿伊", "賽拉菲娜", "莫妮卡", "妮可", "蕾拉", "卡蜜拉"];
-    const name = names[Math.floor(Math.random() * names.length)];
-
-    return {
-        id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
-        name: name,
-        race: chosenRace,
-        personality: pers,
-        defect: defect,
-        appearance: app,
-        scent: scent,
-        relation: 10,
-        obedience: 20,
-        stress: 15,
-        hunger: 20
-    };
-}
-
-// 5. 場景制時間推進系統
-function advanceTime(phases = 1) {
-    for (let i = 0; i < phases; i++) {
-        S.subPhase++;
-        if (S.subPhase > 3) {
-            S.subPhase = 0;
-            S.day++;
-            triggerDailySettlement();
-        }
+/* ---------- 時間 ---------- */
+function advanceTime(phases) {
+  if (!phases || phases <= 0) return;
+  for (let i = 0; i < phases; i++) {
+    S.subPhase++;
+    if (S.subPhase >= SUBPHASE_NAMES.length) {
+      S.subPhase = 0;
+      S.day++;
+      triggerDailySettlement();
     }
-    // 時間推進微量回氣
-    S.master.hp = Math.min(S.master.maxHp, S.master.hp + 5 * phases);
-    saveGame();
+  }
 }
 
-// 每日結算（房租、純血體液消耗、糧食）
 function triggerDailySettlement() {
-    pushLog(`=== 第 ${S.day} 日開始 ===`);
-
-    // 扣除房租
-    let totalRent = 0;
-    DISTRICTS.forEach(d => {
-        d.houses.forEach(h => {
-            if (S.ownedHouses.includes(h.id)) totalRent += h.rent;
-        });
-    });
-
-    if (S.master.gold >= totalRent) {
-        S.master.gold -= totalRent;
-        pushLog(`支付房租日常維護費 ${totalRent} G。`);
-    } else {
-        pushLog(`【破產警報】無法支付房租 (${totalRent} G)！魅魔生活環境惡化，壓力暴增。`);
-        S.succubi.forEach(s => s.stress = Math.min(100, s.stress + 25));
+  let hpCost = 0, goldCost = 0, permIncome = 0;
+  for (const s of S.succubi) {
+    s.hunger = clamp(s.hunger + 15, 0, 100);
+    s.stress = clamp(s.stress + 4, 0, 100);
+    if (s.contract === "permanent") {
+      s.affection = clamp(s.affection + 2, 0, 100);
+      s.stress = clamp(s.stress - 2, 0, 100);
+      permIncome += 15;
     }
+    if (s.raceKey === "pure") hpCost += 6; else goldCost += 20;
+  }
+  let msg = "新的一日來臨。";
+  if (hpCost > 0) { S.master.hp = clamp(S.master.hp - hpCost, 0, S.master.maxHp); msg += ` 純血魅魔循著你的氣味索食，你的體力被分走了 ${hpCost}。`; }
+  if (goldCost > 0) { S.master.gold = Math.max(0, S.master.gold - goldCost); msg += ` 你為魅魔張羅吃食，花去 ${goldCost} 金。`; }
+  pushLog("system", msg);
 
-    // 餵食與純血汲取
-    const rankInfo = MASTER_RANKS.find(r => r.rank === S.master.rank) || MASTER_RANKS[0];
-    const discount = rankInfo.staminaDiscount;
-
-    S.succubi.forEach(s => {
-        s.hunger = Math.min(100, s.hunger + 30);
-        if (s.race.id === "pureblood") {
-            // 純血魅魔：扣主角體力
-            const baseStamina = FOODS.fluids.costStamina;
-            const finalStamina = Math.max(5, Math.round(baseStamina * (1 - discount)));
-            if (S.master.hp >= finalStamina) {
-                S.master.hp -= finalStamina;
-                s.hunger = Math.max(0, s.hunger - FOODS.fluids.hungerRecover);
-                pushLog(`${s.name} (純血) 汲取了你的體液，消耗體力 ${finalStamina} 點。`);
-            } else {
-                s.stress = Math.min(100, s.stress + 35);
-                s.relation = Math.max(0, s.relation - 8);
-                pushLog(`【飢渴狂亂】主控體力耗盡，無法滿足 ${s.name} 的體液需求！魅魔瀕臨暴走。`);
-            }
-        } else {
-            // 雜血/一般魅魔：扣糧食金幣
-            if (S.master.gold >= FOODS.normal.costGold) {
-                S.master.gold -= FOODS.normal.costGold;
-                s.hunger = Math.max(0, s.hunger - FOODS.normal.hungerRecover);
-            } else {
-                s.stress = Math.min(100, s.stress + 20);
-                pushLog(`金幣耗盡無法購糧，${s.name} 陷入飢餓虛弱。`);
-            }
-        }
-    });
+  const income = 30 + S.master.rank * 15 + permIncome;
+  S.master.gold += income;
+  if (permIncome > 0) pushLog("system", `你名下的產業為你帶來 ${income} 金進帳，其中含永久契約的侍奉之禮。`);
+  else pushLog("system", `你名下的產業為你帶來 ${income} 金的進帳。`);
 }
 
-// 6. 存檔與讀檔
-function saveGame() {
-    try {
-        localStorage.setItem(SAVE_KEY, JSON.stringify(S));
-    } catch (e) {
-        console.error("存檔失敗:", e);
+/* ---------- 市場：購買候選 ---------- */
+function generateMarketCandidates(type) {
+  const list = [];
+  const count = 3 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < count; i++) list.push(generateOneCandidate(type, i));
+  return list;
+}
+
+function generateOneCandidate(type, idx) {
+  const isOfficial = type === "official";
+  const race = pick(RACES), p = pick(PERSONALITIES), ap = pick(APPEARANCES), sc = pick(SCENTS);
+  let defect = null, background = "", price = 0;
+
+  if (isOfficial) {
+    background = pick(OFFICIAL_BACKGROUNDS);
+    price = 600 + Math.floor(Math.random() * 800);
+  } else {
+    background = pick(BLACKMARKET_BACKGROUNDS);
+    price = 150 + Math.floor(Math.random() * 450);
+    if (Math.random() < 0.85) defect = pick(DEFECTS);
+  }
+  if (defect) price = Math.max(80, Math.floor(price * 0.7));
+
+  return {
+    id: "cand_" + type + "_" + idx + "_" + Math.floor(Math.random() * 10000),
+    name: randomName(),
+    raceKey: race.key, raceName: race.name, raceDesc: race.desc,
+    appearance: ap, scent: sc,
+    personality: p.id, personalityName: p.name, personalityDesc: p.desc,
+    defect: defect, background: background, price: price,
+    risk: isOfficial ? "低風險" : "高風險",
+    statSeed: {
+      affection: isOfficial ? randInt(10, 19) : randInt(2, 7),
+      obedience: isOfficial ? randInt(20, 34) : randInt(3, 10),
+      stress: isOfficial ? randInt(5, 12) : randInt(20, 39),
+      hunger: randInt(20, 39)
     }
+  };
+}
+
+function openMarket(type) {
+  if (!MARKET_INFO[type]) return;
+  S.market.type = type;
+  S.market.candidates = generateMarketCandidates(type);
+  S.market.selectedId = null;
+  if (typeof renderMarket === "function") renderMarket();
+}
+
+function inspectCandidate(id) {
+  const c = S.market.candidates.find(x => x.id === id);
+  if (!c) return null;
+  S.market.selectedId = id;
+  if (typeof renderCandidateDetail === "function") renderCandidateDetail(c);
+  return c;
+}
+
+function showConfirm(id) {
+  const c = S.market.candidates.find(x => x.id === id);
+  if (!c) return null;
+  S.market.selectedId = id;
+  if (typeof showConfirmModal === "function") showConfirmModal(c);
+  return c;
+}
+
+function confirmPurchase() {
+  const c = S.market.candidates.find(x => x.id === S.market.selectedId);
+  if (!c) return;
+  if (S.master.gold < c.price) {
+    pushLog("system", `你的錢袋不夠沉，還差 ${c.price - S.master.gold} 金。`);
+    if (typeof renderMarket === "function") renderMarket();
+    return;
+  }
+
+  S.master.gold -= c.price;
+  const suc = {
+    id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+    name: c.name,
+    raceKey: c.raceKey, raceName: c.raceName, raceDesc: c.raceDesc,
+    appearance: c.appearance, scent: c.scent,
+    personality: c.personality, personalityName: c.personalityName, personalityDesc: c.personalityDesc,
+    defect: c.defect, background: c.background, risk: c.risk,
+    origin: c.risk === "低風險" ? "official" : "blackmarket",
+    affection: c.statSeed.affection, obedience: c.statSeed.obedience,
+    stress: c.statSeed.stress, hunger: c.statSeed.hunger,
+    contract: "temporary", storyUnlocked: false
+  };
+
+  S.succubi.push(suc);
+  S.market.candidates = [];
+  S.market.selectedId = null;
+  S.market.type = null;
+  addMasterExp(25);
+
+  if (typeof closeAllModals === "function") closeAllModals();
+  if (typeof purchaseReaction === "function") {
+    const r = purchaseReaction(suc);
+    if (r && typeof appendStoryMessage === "function") appendStoryMessage("story", r.narrative);
+    if (r) S.currentChoices = r.choices || [];
+  }
+  pushLog("system", `契約成立。${suc.name} 從此納入你的名下，${suc.risk}的出身，往後都得由你負責。`);
+  if (typeof renderAll === "function") renderAll();
+}
+
+/* ---------- 出售 ---------- */
+function computeQuality(suc) {
+  return Math.round(suc.affection * 2 + suc.obedience * 3 + (100 - suc.stress) * 1.5 - suc.hunger * 0.8);
+}
+
+function officialPrice(suc) {
+  return Math.max(80, 150 + Math.round(computeQuality(suc) * 1.2));
+}
+
+function blackPrice(suc) {
+  return Math.max(150, Math.round(officialPrice(suc) * (1.4 + Math.random() * 0.6)));
+}
+
+function auctionPrice(suc) {
+  return Math.round(officialPrice(suc) * (1.8 + Math.random() * 1.2));
+}
+
+function prepareSell(succubusId, channel) {
+  const suc = getSuccubus(succubusId);
+  if (!suc) return null;
+  if (suc.contract === "permanent") { pushLog("system", "她已與你締下永久之契，不能再被轉讓。"); return null; }
+
+  S.sellState = { succubusId, channel, weird: null, price: 0 };
+
+  if (channel === "official") {
+    S.sellState.price = officialPrice(suc);
+  } else if (channel === "blackmarket") {
+    S.sellState.price = blackPrice(suc);
+    if (Math.random() < 0.45) {
+      const w = pick(WEIRD_BUYERS);
+      S.sellState.weird = w;
+      S.sellState.price = Math.max(120, Math.round(S.sellState.price * w.priceMult));
+    }
+  } else if (channel === "auction") {
+    if (!isHighDistrict(S.currentDistrictId)) { pushLog("system", "拍賣會只在高等街區舉辦，緋夜舊城沒有這等燈海。"); S.sellState = null; return null; }
+    if (!(suc.obedience >= AUCTION_INFO.minObedience && suc.affection >= AUCTION_INFO.minAffection)) {
+      pushLog("system", "她的火候還不夠，尚不足以站上競價台。");
+      S.sellState = null;
+      return null;
+    }
+    S.sellState.price = auctionPrice(suc);
+  }
+  return S.sellState;
+}
+
+function executeSell() {
+  if (!S.sellState) return false;
+  const { succubusId, channel, price, weird } = S.sellState;
+  const idx = S.succubi.findIndex(s => s.id === succubusId);
+  if (idx === -1) { S.sellState = null; return false; }
+  const suc = S.succubi[idx];
+  S.succubi.splice(idx, 1);
+
+  let gold = price;
+  if (channel === "auction") gold = Math.round(price * (1 - AUCTION_INFO.commission));
+
+  let bonusText = "";
+  if (weird && weird.effect) {
+    gold += (weird.effect.gold || 0);
+    S.master.hp = clamp(S.master.hp + (weird.effect.hp || 0), 0, S.master.maxHp);
+    if (weird.effect.exp) addMasterExp(weird.effect.exp);
+    bonusText = " " + (weird.consequenceText || "");
+  }
+
+  S.master.gold += gold;
+  addMasterExp(channel === "auction" ? 30 : 15);
+  pushLog("system", `你將 ${suc.name} 轉讓了出去，換得 ${gold} 金。${bonusText}`);
+  S.sellState = null;
+  return true;
+}
+
+/* ---------- 永久契約 ---------- */
+function signPermanentContract(succubusId) {
+  const suc = getSuccubus(succubusId);
+  if (!suc) return false;
+  if (suc.contract === "permanent") { pushLog("system", "她早已是你緋夜的一部分。"); return false; }
+  if (suc.affection < CONTRACT_INFO.permanentAffectionReq) {
+    pushLog("system", `她的心意尚未抵達。永久之契需要好感達到 ${CONTRACT_INFO.permanentAffectionReq}。`);
+    return false;
+  }
+  if (S.master.gold < CONTRACT_INFO.permanentCost) {
+    pushLog("system", "你的錢袋不夠沉，無力置辦這份永久的儀式。");
+    return false;
+  }
+  S.master.gold -= CONTRACT_INFO.permanentCost;
+  suc.contract = "permanent";
+  suc.storyUnlocked = true;
+  addMasterExp(40);
+  pushLog("system", `以血與吻烙下永久之契。${suc.name} 從此不再是可以易手的貨物，而是你緋夜的一部分。`);
+  return true;
+}
+
+/* ---------- 道具 ---------- */
+function applyEffects(suc, fx) {
+  if (!suc || !fx) return;
+  let aff = fx.affection || 0, obe = fx.obedience || 0;
+  if (suc.contract === "permanent") {
+    if (aff > 0) aff = Math.round(aff * 1.5);
+    if (obe > 0) obe = Math.round(obe * 1.5);
+  }
+  suc.affection = clamp(suc.affection + aff, 0, 100);
+  suc.obedience = clamp(suc.obedience + obe, 0, 100);
+  suc.stress = clamp(suc.stress + (fx.stress || 0), 0, 100);
+  suc.hunger = clamp(suc.hunger + (fx.hunger || 0), 0, 100);
+}
+
+function consumeItemByStory(itemId, succubusId) {
+  const idx = S.inventory.indexOf(itemId);
+  if (idx === -1) return false;
+  S.inventory.splice(idx, 1);
+  const item = getItem(itemId);
+  const suc = getSuccubus(succubusId) || currentSuccubus();
+  if (item && suc) {
+    applyEffects(suc, item.effects);
+    if (item.masterHp) {
+      S.master.hp = clamp(S.master.hp + item.masterHp, 0, S.master.maxHp);
+      pushLog("system", `駕馭「${item.name}」耗去了你 ${-item.masterHp} 點體力。`);
+    }
+    pushLog("story", `你使用了「${item.name}」。${item.desc}`);
+    addMasterExp(3);
+  }
+  return true;
+}
+
+function useItemOnSuccubus(itemId, succubusId) { return consumeItemByStory(itemId, succubusId); }
+
+/* ---------- 道具商店 ---------- */
+const SHOP_INFO = {
+  official:    { name: "官方道具行",     desc: "高塔區的官方道具行，明碼標價、童叟無欺。", riskLabel: "正規" },
+  blackmarket: { name: "暗巷黑市道具鋪", desc: "暗巷深處的祕密鋪子，只賣些見不得光的玩意。", riskLabel: "違禁" }
+};
+
+/* 道具歸屬：官方（正規、入門、補品）／ 黑市（秘藥、禁忌、高階） */
+const SHOP_ITEM_SOURCE = {
+  soothe_candy: "official", herbal_tea: "official", aroma_oil: "official",
+  honey_sweet: "official", calming_incense: "official",
+  soft_whip: "official", crimson_gag: "official", night_beads: "official",
+  velvet_rope: "official", silk_ribbon: "official", feather_duster: "official",
+  candle_wax: "official", silver_collar: "official",
+  onyx_blindfold: "official", silver_bell_clips: "official",
+  tower_page: "official",
+  oldtown_incense: "blackmarket",
+  charm_essence: "blackmarket", abyss_spirit: "blackmarket",
+  codex1: "blackmarket", codex2: "blackmarket", codex3: "blackmarket",
+  bm_spiked_rod: "blackmarket", bm_blood_clips: "blackmarket",
+  bm_tri_shackle: "blackmarket", bm_iron_mask: "blackmarket", bm_twin_serpent: "blackmarket"
+};
+
+function shopItems(type) {
+  return ITEMS.filter(it => SHOP_ITEM_SOURCE[it.id] === type);
+}
+
+function buyItem(itemId) {
+  const it = getItem(itemId);
+  if (!it) return false;
+  if (S.master.gold < it.price) {
+    pushLog("system", `你的錢袋不夠沉，還差 ${it.price - S.master.gold} 金。`);
+    return false;
+  }
+  if (S.master.rank < it.rankReq) {
+    pushLog("system", `你的階級尚不足以駕馭「${it.name}」，需晉升至【${getRank(it.rankReq).name}】。`);
+    return false;
+  }
+  S.master.gold -= it.price;
+  addItem(itemId);
+  pushLog("system", `你購入了「${it.name}」。${it.desc}`);
+  return true;
+}
+
+/* ---------- AI 指令結算 ---------- */
+function processAICommands(cmd) {
+  if (!cmd) return;
+
+  if (cmd.narrative && typeof appendStoryMessage === "function") {
+    appendStoryMessage("story", cmd.narrative);
+  }
+
+  if (Array.isArray(cmd.commands)) {
+    for (const c of cmd.commands) {
+      if (!c) continue;
+      switch (c.type) {
+        case "item":
+          consumeItemByStory(c.itemId, c.succubusId);
+          break;
+        case "stat": {
+          const suc = getSuccubus(c.succubusId) || currentSuccubus();
+          if (suc && c.delta) applyEffects(suc, c.delta);
+          break;
+        }
+        case "time": advanceTime(c.phases || 1); break;
+        case "gold": S.master.gold = Math.max(0, S.master.gold + (c.amount || 0)); break;
+        case "hp": S.master.hp = clamp(S.master.hp + (c.amount || 0), 0, S.master.maxHp); break;
+        case "exp": addMasterExp(c.amount || 0); break;
+      }
+    }
+  }
+
+  if (Array.isArray(cmd.choices) && cmd.choices.length) S.currentChoices = cmd.choices;
+  if (typeof renderAll === "function") renderAll();
+}
+
+/* ---------- 日誌 ---------- */
+function pushLog(type, text) {
+  if (!S.logs) S.logs = [];
+  S.logs.push({ type, text, t: Date.now() });
+}
+
+/* ---------- 存檔 ---------- */
+const SAVE_KEY = "ck_save_v4";
+
+function saveGame() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); return true; }
+  catch (e) { return false; }
 }
 
 function loadGame() {
-    try {
-        const raw = localStorage.getItem(SAVE_KEY);
-        if (raw) {
-            const data = JSON.parse(raw);
-            // 補齊舊存檔可能缺少的屬性
-            if (!data.master.style) data.master.style = "dom";
-            if (typeof data.master.persona === "undefined") data.master.persona = "";
-            if (!Array.isArray(data.currentChoices)) data.currentChoices = [];
-            S = data;
-            checkMasterRank();
-            return true;
-        }
-    } catch (e) {
-        console.error("讀檔失敗:", e);
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw) {
+      S = JSON.parse(raw);
+      S.market = { type: null, candidates: [], selectedId: null };
+      S.sellState = null;
+      S.currentChoices = S.currentChoices || [];
+      S.logs = S.logs || [];
+      S.facts = S.facts || [];
+      return true;
     }
-    return false;
+  } catch (e) {}
+  return false;
 }
 
 function resetGame() {
-    localStorage.removeItem(SAVE_KEY);
-    location.reload();
-}
-
-function pushLog(text) {
-    S.logs.push(`[${SUBPHASE_NAMES[S.subPhase]}] ${text}`);
-    if (S.logs.length > 60) S.logs.shift();
+  if (typeof confirm === "function" && !confirm("確定要抹去現有的進度，重新開始嗎？")) return;
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  S = defaultState();
+  if (typeof renderAll === "function") renderAll();
 }

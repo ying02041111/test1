@@ -13,7 +13,6 @@ function persistApiSettings(cfg) {
   localStorage.setItem(API_SETTINGS_KEY, JSON.stringify(cfg || {}));
 }
 
-/* ---------- 持有道具名（供 Prompt 與保底選項使用） ---------- */
 function ownedItemNames() {
   return S.inventory.map(id => { const it = getItem(id); return it ? it.name : ""; }).filter(Boolean);
 }
@@ -186,11 +185,12 @@ function fill(tpl, suc) {
 
 function buildMockChoices(suc) {
   if (!suc) {
-    return [
+    const arr = [
       "踏進高塔契約廳，去挑一雙屬於你的眼睛。",
-      "鑽進暗巷黑市，賭一把低價的誘惑。",
       "先踱到緋夜舊城的街頭，聽聽今晚的風聲。"
     ];
+    if (S.hasPurchased) arr.splice(1, 0, "鑽進暗巷黑市，賭一把低價的誘惑。");
+    return arr;
   }
   const arr = [];
   const shuffled = BASE_CHOICES.slice().sort(() => Math.random() - 0.5);
@@ -231,7 +231,6 @@ function mockNarrativeResponse(input) {
   return { narrative, choices, commands };
 }
 
-/* 購入魅魔後的第一夜 */
 function purchaseReaction(suc) {
   const narrative = fill("契約落定的那一夜，{name} 被領進你的住處。她的{appearance}。你與她的第一個夜晚，才正要開始。", suc);
   return { narrative, choices: buildMockChoices(suc), commands: [] };

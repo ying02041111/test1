@@ -36,16 +36,28 @@ body {
   letter-spacing: 0.02em;
 }
 
+/* 固定背景層：比例與位置永遠固定 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(255, 211, 212, 0.20), transparent 60%),
+    radial-gradient(100% 50% at 50% 100%, rgba(213, 235, 228, 0.24), transparent 65%),
+    var(--bg);
+}
+
 #app {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   height: 100%;
   max-width: 560px;
   margin: 0 auto;
-  background:
-    radial-gradient(120% 60% at 50% 0%, rgba(255, 211, 212, 0.18), transparent 60%),
-    radial-gradient(100% 50% at 50% 100%, rgba(213, 235, 228, 0.22), transparent 65%),
-    var(--bg);
+  background: transparent;
   box-shadow: 0 0 0 1px var(--line), 0 0 40px rgba(92, 71, 65, 0.06);
 }
 
@@ -70,8 +82,19 @@ body {
 
 #view { flex: 1; overflow: hidden; position: relative; }
 
-.panel { display: none; flex-direction: column; height: 100%; padding: 16px; gap: 14px; overflow-y: auto; }
+.panel {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  gap: 14px;
+  overflow-y: auto;
+}
+
 .panel.active { display: flex; }
+
+/* 劇情面板：整頁不滑動，改由內部區塊各自滑動 */
+#panel-story { overflow: hidden; }
 
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .panel-head h2, .card-title { font-size: 14px; font-weight: 700; color: var(--ink-strong); letter-spacing: 0.12em; }
@@ -89,7 +112,8 @@ body {
 
 /* ---------- 劇情 ---------- */
 .story-log {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -140,7 +164,18 @@ body {
 .thinking { animation: blink 1s infinite; }
 @keyframes blink { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 
-.choice-list { display: flex; flex-direction: column; gap: 9px; padding-bottom: 4px; }
+/* 選項：太長時可滑動，最高佔 40% */
+.choice-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
 
 .choice-btn {
   text-align: left;
@@ -154,6 +189,7 @@ body {
   line-height: 1.6;
   cursor: pointer;
   transition: all 0.18s ease;
+  flex: 0 0 auto;
 }
 
 .choice-btn:hover, .choice-btn:active {
@@ -163,7 +199,7 @@ body {
   box-shadow: 0 3px 10px var(--shadow);
 }
 
-.story-input { display: flex; gap: 8px; }
+.story-input { flex: 0 0 auto; display: flex; gap: 8px; }
 
 .story-input input {
   flex: 1;
@@ -273,13 +309,7 @@ body {
 
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent-deep); }
 
-.field-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .field-row label { font-size: 12.5px; color: var(--ink-soft); letter-spacing: 0.06em; }
 
 .range-val { color: var(--accent-warn); font-weight: 700; }
@@ -291,7 +321,6 @@ input[type="range"] {
   cursor: pointer;
 }
 
-/* 開關 */
 .switch { position: relative; display: inline-block; width: 48px; height: 26px; flex: 0 0 48px; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .switch .slider {
@@ -557,10 +586,12 @@ input[type="range"] {
 /* ---------- 捲軸 ---------- */
 .panel::-webkit-scrollbar,
 .story-log::-webkit-scrollbar,
+.choice-list::-webkit-scrollbar,
 .modal-body::-webkit-scrollbar { width: 6px; }
 
 .panel::-webkit-scrollbar-thumb,
 .story-log::-webkit-scrollbar-thumb,
+.choice-list::-webkit-scrollbar-thumb,
 .modal-body::-webkit-scrollbar-thumb {
   background: rgba(119, 92, 86, 0.25);
   border-radius: 3px;

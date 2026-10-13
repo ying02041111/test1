@@ -68,6 +68,35 @@ function ownedItemNames() {
   return S.inventory.map(id => { const it = getItem(id); return it ? it.name : ""; }).filter(Boolean);
 }
 
+/* ---------- 前情記憶（上下文連貫） ---------- */
+function ensureHistory() {
+  if (!S.history || !Array.isArray(S.history)) S.history = [];
+  return S.history;
+}
+
+function recordTurn(userText, narrative) {
+  const h = ensureHistory();
+  const u = String(userText || "").trim();
+  const a = String(narrative || "").trim();
+  if (!a) return;
+  h.push({ u, a });
+  while (h.length > 8) h.shift();
+  for (const e of h) {
+    if (e.a.length > 1500) e.a = e.a.slice(0, 1500) + "…";
+    if (e.u.length > 400) e.u = e.u.slice(0, 400);
+  }
+}
+
+function buildHistoryMessages() {
+  const h = ensureHistory();
+  const msgs = [];
+  for (const e of h) {
+    if (e.u) msgs.push({ role: "user", content: e.u });
+    if (e.a) msgs.push({ role: "assistant", content: e.a });
+  }
+  return msgs;
+}
+
 /* ---------- 系統 Prompt ---------- */
 function buildSystemPrompt() {
   const m = S.master;
@@ -133,6 +162,12 @@ ${succText}
 - 若劇情使她離開、被你留下、分頭行動、或重逢，請在 commands 送出：
   {"type":"presence","succubusId":"<上面 [] 內的 id>","present":false,"place":"房裡"}
   （重逢時送 "present":true）
+
+【承接前情（極重要，務必嚴格遵守）】
+- 對話紀錄中，上一則 assistant 訊息的內容，就是「此刻正在發生的畫面」。你必須嚴格承接它的姿勢、動作與進行中的事，不得與之矛盾、不得無故重置。
+- 例：上一則她「跪在你腳邊、把蒼白的手腕伸到你唇前」——那麼這一則開頭，她仍跪著、手腕仍伸著，除非玩家這次輸入明確叫她站起或收手。
+- 例：前文是「她把純血的手腕給你吸食」，玩家說「吃吧」——那是繼續飲她的血：寫你低頭含住她的手腕、血的氣味與滋味，而不是憑空端出食物。
+- 不要讓角色無緣無故站起、換姿勢、離場，除非有明確的劇情原因，或玩家這次輸入直接促成。
 
 【寫作範例（僅格式參考，勿照抄內容）】
 ── 第 9 日 · 上午 · 霓虹港 ──
@@ -270,35 +305,44 @@ function parseAIJson(text) {
 }
 
 /* ---------- 呼叫外部 AI ---------- */
+function finishTurn(userText, result) {
+  if (result && typeof result.narrative === "string") recordTurn(userText, result.narrative);
+  return result;
+}
+
 async function callStoryAI(userText) {
   const cfg = getApiSettings();
+
   if (!cfg.url || !cfg.key) {
     aiDiag("尚未設定 API（缺 Key 或 URL），改用離線模式。");
-    return mockNarrativeResponse(userText);
+    return finishTurn(userText, mockNarrativeResponse(userText));
   }
 
   const url = normalizeApiUrl(cfg.url);
+  const messages = [
+    { role: "system", content: buildSystemPrompt() },
+    ...buildHistoryMessages(),
+    { role: "user", content: userText }
+  ];
+
   let res;
   try {
-    res = await sendChat(url, cfg, [
-      { role: "system", content: buildSystemPrompt() },
-      { role: "user", content: userText }
-    ]);
+    res = await sendChat(url, cfg, messages);
   } catch (e) {
     aiDiag("連線失敗（網路或跨域）：" + (e && e.message ? e.message : e));
-    return mockNarrativeResponse(userText);
+    return finishTurn(userText, mockNarrativeResponse(userText));
   }
 
   if (!res.ok) {
     let t = "";
     try { t = await res.text(); } catch (_) {}
     aiDiag(`回應錯誤 ${res.status}（${url}）：${(t || "").slice(0, 140)}`);
-    return mockNarrativeResponse(userText);
+    return finishTurn(userText, mockNarrativeResponse(userText));
   }
 
   let data;
   try { data = await res.json(); }
-  catch (e) { aiDiag("回應不是 JSON。"); return mockNarrativeResponse(userText); }
+  catch (e) { aiDiag("回應不是 JSON。"); return finishTurn(userText, mockNarrativeResponse(userText)); }
 
   const choice = data && data.choices && data.choices[0];
   const msg = choice && choice.message;
@@ -313,7 +357,7 @@ async function callStoryAI(userText) {
     if (!Array.isArray(parsed.choices) || !parsed.choices.length) {
       parsed.choices = buildMockChoices(currentSuccubus());
     }
-    return parsed;
+    return finishTurn(userText, parsed);
   }
 
   const rawC = String(content || "").trim();
@@ -322,7 +366,7 @@ async function callStoryAI(userText) {
   info += rawC ? "：" + rawC.slice(0, 200) : "：正文為空";
   if (!rawC && think) info += `（只有思考內容，請確認已關閉思考）`;
   aiDiag(info);
-  return mockNarrativeResponse(userText);
+  return finishTurn(userText, mockNarrativeResponse(userText));
 }
 
 /* ---------- 連線測試 ---------- */
@@ -464,5 +508,6 @@ function purchaseReaction(suc) {
     "{name}：（低聲）「……主人。」",
     suc
   );
+  recordTurn("（契約成立，你帶她離開契約所）", head + "\n" + body);
   return { narrative: head + "\n" + body, choices: buildMockChoices(suc), commands: [] };
 }

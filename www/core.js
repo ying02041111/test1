@@ -5,6 +5,9 @@
 
 let S = defaultState();
 
+/* 街區進入門檻（依主控階級） */
+const DISTRICT_RANK = { oldtown: 1, lantern: 2, tower: 3, outskirt: 4 };
+
 function defaultState() {
   return {
     master: { hp: 100, maxHp: 100, gold: 800, exp: 0, rank: 1, style: "gentle", persona: "" },
@@ -19,8 +22,9 @@ function defaultState() {
     logs: [],
     summary: "",
     facts: [],
-    market: { type: null, candidates: [], selectedId: null },
+    market: { type: null, candidates: [], selectedId: null, cache: {} },
     sellState: null,
+    hasPurchased: false,
     started: false
   };
 }
@@ -50,6 +54,7 @@ function addItem(itemId) { S.inventory.push(itemId); }
 function getSuccubus(id) { return S.succubi.find(s => s.id === id); }
 function currentSuccubus() { return S.succubi.length ? S.succubi[0] : null; }
 function isHighDistrict(id) { const d = getDistrict(id); return d ? !!d.isHigh : false; }
+function districtRankReq(id) { return DISTRICT_RANK[id] || 1; }
 
 /* ---------- 好感加成：55 前 0.4x，破冰後 1.6x ---------- */
 function calcRelRate(suc) {
@@ -127,7 +132,7 @@ function triggerDailySettlement() {
   else pushLog("system", `你名下的產業為你帶來 ${income} 金的進帳。`);
 }
 
-/* ---------- 市場：購買候選 ---------- */
+/* ---------- 市場：購買候選（同日固定，換日刷新） ---------- */
 function generateMarketCandidates(type) {
   const list = [];
   const count = 3 + Math.floor(Math.random() * 2);
@@ -169,8 +174,22 @@ function generateOneCandidate(type, idx) {
 
 function openMarket(type) {
   if (!MARKET_INFO[type]) return;
+  if (type === "blackmarket" && !S.hasPurchased) {
+    pushLog("system", "你尚無名下魅魔，暗巷黑市還不對你敞開。先到官方契約廳，挑第一雙屬於你的眼睛吧。");
+    if (typeof renderAll === "function") renderAll();
+    return;
+  }
+
   S.market.type = type;
-  S.market.candidates = generateMarketCandidates(type);
+  const cache = S.market.cache || (S.market.cache = {});
+  const entry = cache[type];
+  if (entry && entry.day === S.day) {
+    S.market.candidates = entry.list.slice();
+  } else {
+    const list = generateMarketCandidates(type);
+    cache[type] = { day: S.day, list };
+    S.market.candidates = list.slice();
+  }
   S.market.selectedId = null;
   if (typeof renderMarket === "function") renderMarket();
 }
@@ -194,6 +213,7 @@ function showConfirm(id) {
 function confirmPurchase() {
   const c = S.market.candidates.find(x => x.id === S.market.selectedId);
   if (!c) return;
+  const type = S.market.type;
   if (S.master.gold < c.price) {
     pushLog("system", `你的錢袋不夠沉，還差 ${c.price - S.master.gold} 金。`);
     if (typeof renderMarket === "function") renderMarket();
@@ -215,7 +235,12 @@ function confirmPurchase() {
   };
 
   S.succubi.push(suc);
-  S.market.candidates = [];
+  S.hasPurchased = true;
+
+  if (type && S.market.cache && S.market.cache[type]) {
+    S.market.cache[type].list = S.market.cache[type].list.filter(x => x.id !== c.id);
+  }
+  S.market.candidates = S.market.candidates.filter(x => x.id !== c.id);
   S.market.selectedId = null;
   S.market.type = null;
   addMasterExp(25);
@@ -362,7 +387,6 @@ const SHOP_INFO = {
   blackmarket: { name: "暗巷黑市道具鋪", desc: "暗巷深處的祕密鋪子，只賣些見不得光的玩意。", riskLabel: "違禁" }
 };
 
-/* 道具歸屬：官方（正規、入門、補品）／ 黑市（秘藥、禁忌、高階） */
 const SHOP_ITEM_SOURCE = {
   soothe_candy: "official", herbal_tea: "official", aroma_oil: "official",
   honey_sweet: "official", calming_incense: "official",
@@ -450,8 +474,9 @@ function loadGame() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
       S = JSON.parse(raw);
-      S.market = { type: null, candidates: [], selectedId: null };
+      S.market = { type: null, candidates: [], selectedId: null, cache: {} };
       S.sellState = null;
+      S.hasPurchased = !!S.hasPurchased || (S.succubi && S.succubi.length > 0);
       S.currentChoices = S.currentChoices || [];
       S.logs = S.logs || [];
       S.facts = S.facts || [];
@@ -462,7 +487,6 @@ function loadGame() {
 }
 
 function resetGame() {
-  if (typeof confirm === "function" && !confirm("確定要抹去現有的進度，重新開始嗎？")) return;
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
   S = defaultState();
   if (typeof renderAll === "function") renderAll();

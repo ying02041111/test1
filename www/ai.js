@@ -82,7 +82,8 @@ function buildSystemPrompt() {
     ? S.succubi.map(s => {
         const contract = s.contract === "permanent" ? "永久契約" : "暫時契約";
         const def = s.defect ? `｜缺陷:${s.defect.name}` : "";
-        return `${s.name}（${s.raceName}｜${s.personalityName}｜${contract}｜好感${s.affection} 服從${s.obedience} 壓力${s.stress} 飢餓${s.hunger}${def}）`;
+        const pres = s.present ? "在身邊" : ("不在" + (s.place ? `（${s.place}）` : ""));
+        return `[${s.id}] ${s.name}（${s.raceName}｜${s.personalityName}｜${contract}｜${pres}｜好感${s.affection} 服從${s.obedience} 壓力${s.stress} 飢餓${s.hunger}${def}）`;
       }).join("；")
     : "（名下尚無魅魔）";
 
@@ -124,6 +125,15 @@ function buildSystemPrompt() {
 - 若輸入含括號（…），括號內是「動作」。
 - 不論是對話、動作、或兩者同時，你都要回應：針對玩家的話給出對白回應，並把動作確實執行、讓場景前進。先後順序不拘。
 
+【人物在場與位置（極重要，務必嚴格遵守）】
+${succText}
+- 標記為「在身邊」的角色，才可以出現在當前場景、說話、動作。
+- 標記為「不在」的角色，絕對不可出現在當前場景、不可說話、不可動作、不可被你一起帶走（除非劇情演出你們重逢）。
+- 場景與人物的上下位置要前後連貫：誰在哪裡、誰被留下，都要承接前文，不可讓角色憑空移動或突然出現。
+- 若劇情使她離開、被你留下、分頭行動、或重逢，請在 commands 送出：
+  {"type":"presence","succubusId":"<上面 [] 內的 id>","present":false,"place":"房裡"}
+  （重逢時送 "present":true）
+
 【寫作範例（僅格式參考，勿照抄內容）】
 ── 第 9 日 · 上午 · 霓虹港 ──
 「先洗個澡，再帶你出去。」你低聲說。
@@ -138,15 +148,12 @@ D. 「轉過來，我幫你洗。」你低聲。
 【調教風格（僅作語氣背景，絕不直接點名）】
 當前風格氣質：${style.name}——${style.desc}。讓語氣貼合，但文中與選項中不得出現「${style.name}」或「風格」等字眼。
 
-【魅魔現況】
-${succText}
-
 【四維如何影響她的態度（務必在對白與舉止中體現）】
 - 好感：高 → 親暱、主動、依戀；低 → 疏離、戒備、客套。
 - 服從：高 → 順從、聽話、服軟；低 → 頂撞、抗拒、陽奉陰違。
 - 壓力：高 → 緊繃、易怒、顫抖、哽咽；低 → 放鬆、慵懶、有餘裕。
 - 飢餓：高 → 渙散、渴求、主動索求；低 → 從容、節制。
-同一句話，會因這四項高低而有截然不同的語氣與反應；數字已隨狀態更新，請依當前數值演出她的態度。
+同一句話，會因這四項高低而有截然不同的語氣與反應。
 - 好感低於 55 時，她必須保有防線與距離，不可一見鍾情、不可瞬間順從。
 
 【玩家背包（僅可引用下列道具，嚴禁提及未擁有的器具）】
@@ -162,8 +169,12 @@ ${itemText}
 - 選項要貼合當前情境與她的狀態，避免重複。
 
 【指令】
-- commands 可選填：{"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"stress":0,"hunger":0}}、{"type":"item","itemId":"...","succubusId":"..."}、{"type":"time","phases":1}、{"type":"gold","amount":0}、{"type":"hp","amount":0}、{"type":"exp","amount":0}。
-- 數值變動幅度宜小（單項 -5 ~ +5）。使用道具時 itemId 必須在上列背包中。
+- commands 可選填：
+  {"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"stress":0,"hunger":0}}
+  {"type":"item","itemId":"...","succubusId":"..."}
+  {"type":"presence","succubusId":"...","present":true/false,"place":"..."}
+  {"type":"time","phases":1}　{"type":"gold","amount":0}　{"type":"hp","amount":0}　{"type":"exp","amount":0}
+- succubusId 請使用上面 [ ] 內的 id。數值變動幅度宜小（單項 -5 ~ +5）。使用道具時 itemId 必須在上列背包中。
 
 【長期指令（務必長期遵守，直到玩家下指令撤除）】
 ${directiveText}
@@ -422,6 +433,7 @@ function mockNarrativeResponse(input) {
   const suc = currentSuccubus();
   let scene = "default";
   if (!suc) scene = "noSuccubus";
+  else if (!suc.present) scene = "absent";
   else if (suc.contract === "permanent" && Math.random() < 0.4) scene = "permanent";
   else if (suc.hunger > 60) scene = "hungerHigh";
   else if (suc.stress > 65) scene = "stressHigh";

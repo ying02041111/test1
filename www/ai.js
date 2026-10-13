@@ -17,7 +17,6 @@ function getApiSettings() {
 
 function persistApiSettings(cfg) { localStorage.setItem(API_SETTINGS_KEY, JSON.stringify(cfg || {})); }
 
-/* 長期指令（ps. 指令） */
 function getDirectives() {
   try { return JSON.parse(localStorage.getItem(DIRECTIVES_KEY) || "[]"); }
   catch (e) { return []; }
@@ -42,7 +41,6 @@ function aiDiag(msg) {
   } catch (_) {}
 }
 
-/* 送出：thinking 直接放 body（等同 SDK 的 extra_body）；不支援就自動拿掉重試 */
 async function sendChat(url, cfg, messages, maxTokens) {
   const headers = { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key };
   const on = !!cfg.thinking;
@@ -101,7 +99,7 @@ function buildSystemPrompt() {
 
 【務必精簡】
 - 整段回覆盡量短：narrative 2~4 句，choices 2~3 個（每個 25 字內），commands 能省則省。
-- 順序固定：narrative → choices → commands，確保篇幅有限時敘事與選項也能寫完。
+- 順序固定：narrative → choices → commands。
 
 【輸出格式】
 {"narrative":"…","choices":["…","…"],"commands":[]}
@@ -118,13 +116,13 @@ function buildSystemPrompt() {
 
 【對話與環境的比例（重要）】
 - 以「對白」為骨幹：讓角色多說話、多互動，對白要佔敘事的主要篇幅。
-- 環境描述點到為止即可，比一般寫法再精簡約兩三成，不要長篇寫景。
-- 例外：若該角色設定為「沉默寡言」，才可以對白稀少、改以動作與氛圍為主。
+- 環境描述點到為止，比一般寫法再精簡約兩三成。
+- 例外：若該角色設定為「沉默寡言」，才可以對白稀少。
 
 【玩家輸入的判讀（重要）】
-- 玩家直接輸入的文字，預設是「對話」（角色在對你說話）。
+- 玩家直接輸入的文字，預設是「對話」。
 - 若輸入含括號（…），括號內是「動作」。
-- 不論是對話、動作、或兩者同時，你都要回應：針對玩家的話給出對白回應，並把動作確實執行、讓場景前進（例如「走吧（前往市集）」→ 要回應那句話，並讓場景真的移動到市集）。先後順序不拘。
+- 不論是對話、動作、或兩者同時，你都要回應：針對玩家的話給出對白回應，並把動作確實執行、讓場景前進。先後順序不拘。
 
 【寫作範例（僅格式參考，勿照抄內容）】
 ── 第 9 日 · 上午 · 霓虹港 ──
@@ -142,8 +140,14 @@ D. 「轉過來，我幫你洗。」你低聲。
 
 【魅魔現況】
 ${succText}
+
+【四維如何影響她的態度（務必在對白與舉止中體現）】
+- 好感：高 → 親暱、主動、依戀；低 → 疏離、戒備、客套。
+- 服從：高 → 順從、聽話、服軟；低 → 頂撞、抗拒、陽奉陰違。
+- 壓力：高 → 緊繃、易怒、顫抖、哽咽；低 → 放鬆、慵懶、有餘裕。
+- 飢餓：高 → 渙散、渴求、主動索求；低 → 從容、節制。
+同一句話，會因這四項高低而有截然不同的語氣與反應；數字已隨狀態更新，請依當前數值演出她的態度。
 - 好感低於 55 時，她必須保有防線與距離，不可一見鍾情、不可瞬間順從。
-- 四維（好感/服從/壓力/飢餓）都要在劇情中有所體現。
 
 【玩家背包（僅可引用下列道具，嚴禁提及未擁有的器具）】
 ${itemText}
@@ -155,7 +159,7 @@ ${itemText}
 【選項規則】
 - 生成 2~3 個選項，一律是「對話」或「動作」的短句。
 - 不要寫主控的內心感受或情緒描寫，少用「我」。
-- 選項要貼合當前情境，避免重複。
+- 選項要貼合當前情境與她的狀態，避免重複。
 
 【指令】
 - commands 可選填：{"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"stress":0,"hunger":0}}、{"type":"item","itemId":"...","succubusId":"..."}、{"type":"time","phases":1}、{"type":"gold","amount":0}、{"type":"hp","amount":0}、{"type":"exp","amount":0}。
@@ -166,7 +170,7 @@ ${directiveText}
 ${factsText}`;
 }
 
-/* ---------- JSON 寬鬆解析（含截斷修補） ---------- */
+/* ---------- JSON 寬鬆解析 ---------- */
 function extractJsonObj(t) {
   const start = t.indexOf("{");
   if (start === -1) return null;
@@ -438,7 +442,15 @@ function mockNarrativeResponse(input) {
   return { narrative, choices, commands };
 }
 
+/* 購買後：從契約所把她帶離，時間對齊當前遊戲時間 */
 function purchaseReaction(suc) {
-  const narrative = fill("契約落定的那一夜，{name} 被領進你的住處。她的{appearance}。你與她的第一個夜晚，才正要開始。", suc);
-  return { narrative, choices: buildMockChoices(suc), commands: [] };
+  const where = (suc && suc.origin === "blackmarket") ? "燈紅暗巷・黑市" : "高塔區・契約廳";
+  const head = `── 第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]} · ${where} ──`;
+  const body = fill(
+    "契約落定，{name} 被契約所的人領到你面前，規規矩矩地站定，微微垂著眼。\n" +
+    "你把她的契約收進懷裡，牽起她，一步步走出契約所——從今往後，她便跟著你了。\n" +
+    "{name}：（低聲）「……主人。」",
+    suc
+  );
+  return { narrative: head + "\n" + body, choices: buildMockChoices(suc), commands: [] };
 }

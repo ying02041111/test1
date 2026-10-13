@@ -1,230 +1,382 @@
-// www/ui.js - 介面渲染、Tab 底部導航、主控人設面板與三層折疊
+/* ============================================================
+   《緋夜飼育錄》介面渲染 ui.js
+   ============================================================ */
 
-// 1. 底部導航切換
-function switchTab(tabId) {
-    document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
-
-    const targetTab = document.getElementById(tabId);
-    if (targetTab) targetTab.classList.add("active");
-
-    const tabMap = ["tab-story", "tab-succubi", "tab-master", "tab-items", "tab-housing"];
-    const btnIndex = tabMap.indexOf(tabId);
-    if (btnIndex >= 0) {
-        const navItems = document.querySelectorAll(".nav-item");
-        if (navItems[btnIndex]) navItems[btnIndex].classList.add("active");
-    }
-
-    renderAll();
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-// 2. 頂部極簡狀態列渲染
-function renderHeader() {
-    const timeEl = document.getElementById("display-time");
-    const goldEl = document.getElementById("display-quick-gold");
-    if (timeEl) timeEl.innerText = `第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]}`;
-    if (goldEl) goldEl.innerText = `${S.master.gold} G`;
+function signed(n) { return n > 0 ? "+" + n : "" + n; }
+
+function openModal(id) { const m = document.getElementById(id); if (m) m.classList.add("open"); }
+function closeModal(id) { const m = document.getElementById(id); if (m) m.classList.remove("open"); }
+function closeAllModals() { document.querySelectorAll(".modal-overlay.open").forEach(m => m.classList.remove("open")); }
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
-// 3. 劇情選項區塊渲染 (主要推進途徑)
-function renderStoryChoices() {
-    const box = document.getElementById("story-choices");
-    if (!box) return;
-
-    if (!Array.isArray(S.currentChoices) || S.currentChoices.length === 0) {
-        S.currentChoices = [
-            "審視當前處境，規劃下一步行動",
-            "前往街區市集尋訪調教道具",
-            "與居所中的魅魔展開訓育"
-        ];
-    }
-
-    box.innerHTML = S.currentChoices.map((choiceText, idx) => `
-        <button class="choice-btn" onclick="handleChoiceClick('${escapeHtml(choiceText)}')">
-            ${idx + 1}. ${choiceText}
-        </button>
-    `).join("");
-}
-
-// 4. 魅魔狀態分頁渲染
-function renderSuccubi() {
-    const container = document.getElementById("succubi-container");
-    if (!container) return;
-
-    if (S.succubi.length === 0) {
-        container.innerHTML = `<div class="msg-box msg-system">當前未飼育任何魅魔。可透過劇情對話或推進選項前往黑市尋覓契約對象。</div>`;
-        return;
-    }
-
-    container.innerHTML = S.succubi.map(s => {
-        const relRate = calcRelRate(s);
-        const isPure = s.race.id === "pureblood";
-
-        return `
-        <div class="game-card">
-            <div class="card-header">
-                <div>
-                    <span class="card-title">${s.name}</span>
-                    <span class="card-badge ${isPure ? '' : 'mint'}">${s.race.name}</span>
-                </div>
-                <span class="card-badge mint">${s.personality.name} (好感率: ${relRate}x)</span>
-            </div>
-            <div style="font-size:0.82rem; margin-bottom:8px; line-height:1.5;">
-                <div><strong>外貌氣味:</strong> ${s.appearance} | ${s.scent}</div>
-                <div><strong>潛在缺陷:</strong> ${s.defect.name} (${s.defect.desc})</div>
-                <div><strong>食性需求:</strong> ${s.race.traitDesc}</div>
-            </div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:6px; font-size:0.8rem; background:var(--bg-main); padding:8px; border-radius:6px;">
-                <div>好感度: <strong>${s.relation}/100</strong></div>
-                <div>服從度: <strong>${s.obedience}/100</strong></div>
-                <div>精神壓力: <strong style="${s.stress > 60 ? 'color:#c02727;' : ''}">${s.stress}/100</strong></div>
-                <div>飢渴程度: <strong style="${s.hunger > 60 ? 'color:#c02727;' : ''}">${s.hunger}/100</strong></div>
-            </div>
-        </div>`;
-    }).join("");
-}
-
-// 5. 主控專屬檔案分頁渲染 (風格 + 人設 + 階級經驗)
-function renderMasterPanel() {
-    const curRank = MASTER_RANKS.find(r => r.rank === S.master.rank) || MASTER_RANKS[0];
-    const titleEl = document.getElementById("master-title");
-    const hpBadge = document.getElementById("master-hp-badge");
-    const expText = document.getElementById("master-exp-text");
-    const expBar = document.getElementById("master-exp-bar");
-    const styleSel = document.getElementById("master-style-select");
-    const personaText = document.getElementById("master-custom-persona");
-
-    if (titleEl) titleEl.innerText = `${curRank.title} (Rank ${curRank.rank})`;
-    if (hpBadge) hpBadge.innerText = `體力: ${S.master.hp}/${S.master.maxHp}`;
-
-    if (expText && expBar) {
-        if (curRank.rank >= 5) {
-            expText.innerText = `${S.master.exp} EXP (最高階級)`;
-            expBar.style.width = "100%";
-        } else {
-            const nextReq = curRank.nextExp;
-            const curBase = curRank.reqExp;
-            const progress = Math.min(100, Math.max(0, Math.round(((S.master.exp - curBase) / (nextReq - curBase)) * 100)));
-            expText.innerText = `${S.master.exp} / ${nextReq} EXP`;
-            expBar.style.width = `${progress}%`;
-        }
-    }
-
-    if (styleSel) styleSel.value = S.master.style || "dom";
-    if (personaText) personaText.value = S.master.persona || "";
-}
-
-// 6. 背包分頁渲染 (嚴格落實：名字 / 文案 / 數值變動 三段式規範，純鑑賞無直接使用按鈕)
-function renderInventory() {
-    const container = document.getElementById("inventory-container");
-    if (!container) return;
-
-    const ownedKeys = Object.keys(S.inventory).filter(k => S.inventory[k] > 0);
-    if (ownedKeys.length === 0) {
-        container.innerHTML = `<div class="msg-box msg-system">隨身背包空無一物。可在劇情推展中於各街區黑市購入。</div>`;
-        return;
-    }
-
-    container.innerHTML = ownedKeys.map(k => {
-        const item = ITEMS[k];
-        if (!item) return "";
-        const isForbidden = item.reqRank >= 2;
-
-        return `
-        <div class="game-card">
-            <div class="card-header">
-                <span class="card-title">${item.name}</span>
-                <span class="card-badge ${isForbidden ? '' : 'mint'}">持有: ${S.inventory[k]}</span>
-            </div>
-            <!-- 三段式標準結構 -->
-            <div class="item-text-block">
-                ${item.desc}
-            </div>
-            <div class="item-stat-badge">
-                <strong>數值變動：</strong>${item.statDesc}
-            </div>
-        </div>`;
-    }).join("");
-}
-
-// 7. 領地房產渲染 (街區 ＞ 房屋 ＞ 詳情 三層折疊)
-function renderHousing() {
-    const container = document.getElementById("housing-container");
-    if (!container) return;
-
-    container.innerHTML = DISTRICTS.map(d => {
-        const isCurrentDistrict = S.currentDistrictId === d.id;
-
-        const housesHtml = d.houses.map(h => {
-            const isOwned = S.ownedHouses.includes(h.id);
-            const isCurrentHome = S.currentHouseId === h.id;
-
-            return `
-            <div class="house-item">
-                <div class="house-header" onclick="toggleDetails('details-${h.id}')">
-                    <span>${h.name} ${isCurrentHome ? '【現居】' : isOwned ? '【已擁有】' : ''}</span>
-                    <span style="font-weight:bold;">容量: ${h.capacity} 人 ▾</span>
-                </div>
-                <div id="details-${h.id}" class="house-details" style="display:none;">
-                    <p style="margin-bottom:4px;">${h.desc}</p>
-                    <p style="color:var(--text-main);">舒適度: ${h.comfort} | 日租金: ${h.rent} G | 售價: ${h.price} G</p>
-                    <div style="margin-top:8px; display:flex; gap:8px;">
-                        ${!isOwned ? `<button class="btn-action" style="font-size:0.75rem; padding:4px 10px;" onclick="handleBuyHouse('${d.id}','${h.id}')">出資購置 (${h.price} G)</button>` : ''}
-                        ${isOwned && !isCurrentHome ? `<button class="btn-action" style="font-size:0.75rem; padding:4px 10px;" onclick="handleMoveHouse('${d.id}','${h.id}')">搬遷入住</button>` : ''}
-                    </div>
-                </div>
-            </div>`;
-        }).join("");
-
-        return `
-        <div class="district-group">
-            <div class="district-header" onclick="toggleDistrict('district-houses-${d.id}')">
-                <span>${d.name} ${isCurrentDistrict ? '【當前所在】' : ''}</span>
-                <span>展開房產 ▾</span>
-            </div>
-            <div id="district-houses-${d.id}" style="display: ${isCurrentDistrict ? 'block' : 'none'};">
-                <div style="padding:8px 12px; font-size:0.78rem; background:var(--bg-main);">
-                    ${d.desc}
-                </div>
-                ${housesHtml}
-            </div>
-        </div>`;
-    }).join("");
-}
-
-// 輔助展開折疊
-function toggleDistrict(id) {
-    const el = document.getElementById(id);
-    if (el) el.style.display = (el.style.display === "none") ? "block" : "none";
-}
-
-function toggleDetails(id) {
-    const el = document.getElementById(id);
-    if (el) el.style.display = (el.style.display === "none") ? "block" : "none";
-}
-
-// 全域刷新
+/* ---------- 總渲染 ---------- */
 function renderAll() {
-    renderHeader();
-    renderStoryChoices();
-    renderSuccubi();
-    renderMasterPanel();
-    renderInventory();
-    renderHousing();
+  renderStatusBar();
+  renderStoryLog();
+  renderChoices();
+  renderSuccubi();
+  renderMaster();
+  renderInventory();
+  renderProperty();
 }
 
-// 追加劇情訊息
+function renderStatusBar() {
+  const m = S.master;
+  document.getElementById("stat-day").textContent = `第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]}`;
+  document.getElementById("stat-gold").textContent = `${m.gold} 金`;
+  document.getElementById("stat-rank").textContent = getRank(m.rank).name;
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+  const panel = document.getElementById("panel-" + tabId);
+  if (panel) panel.classList.add("active");
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tabId));
+}
+
+/* ---------- 劇情 ---------- */
 function appendStoryMessage(type, text) {
-    const logBox = document.getElementById("story-log");
-    if (!logBox) return;
-
-    const div = document.createElement("div");
-    div.className = `msg-box msg-${type}`;
-    div.innerText = text;
-    logBox.appendChild(div);
-    logBox.scrollTop = logBox.scrollHeight;
+  pushLog(type, text);
+  const log = document.getElementById("story-log");
+  if (!log) return;
+  const el = document.createElement("div");
+  el.className = "msg msg-" + type;
+  el.textContent = text;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
 }
 
-function escapeHtml(str) {
-    return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+function renderStoryLog() {
+  const log = document.getElementById("story-log");
+  log.innerHTML = (S.logs || []).map(l => `<div class="msg msg-${l.type}">${escapeHtml(l.text)}</div>`).join("");
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderChoices() {
+  const box = document.getElementById("choice-list");
+  if (!S.currentChoices || !S.currentChoices.length) { box.innerHTML = ""; return; }
+  box.innerHTML = S.currentChoices.map((c, i) => `<button class="choice-btn" data-i="${i}">${escapeHtml(c)}</button>`).join("");
+}
+
+/* ---------- 主控檔案 ---------- */
+function renderMaster() {
+  const m = S.master;
+  const rank = getRank(m.rank);
+  const next = MASTER_RANKS.find(r => r.rank === m.rank + 1);
+  document.getElementById("master-rank-name").textContent = `${rank.name} · ${rank.desc}`;
+  document.getElementById("master-hp").textContent = m.hp;
+  document.getElementById("master-gold").textContent = m.gold;
+  document.getElementById("master-exp-text").textContent = next ? `${m.exp} / ${next.expNeed}` : `${m.exp} / 滿階`;
+  document.getElementById("master-exp-bar").style.width = (next ? clamp(m.exp / next.expNeed * 100, 0, 100) : 100) + "%";
+  document.getElementById("master-style").innerHTML = MASTER_STYLES
+    .map(s => `<option value="${s.id}" ${s.id === m.style ? "selected" : ""}>${s.name} — ${s.desc}</option>`).join("");
+  document.getElementById("master-persona").value = m.persona || "";
+}
+
+/* ---------- 魅魔狀態 ---------- */
+function statItem(label, val, cls) {
+  return `<div class="stat-item">
+    <div class="stat-label"><span>${label}</span><b>${val}</b></div>
+    <div class="bar-track ${cls}"><div class="bar-fill" style="width:${val}%"></div></div>
+  </div>`;
+}
+
+function renderSuccubi() {
+  const box = document.getElementById("succubi-list");
+  if (!S.succubi.length) {
+    box.innerHTML = `<div class="card"><p style="color:var(--ink-soft);font-size:13.5px">你的名下尚無魅魔。夜色很靜，只差一雙屬於你的眼睛。</p></div>`;
+    return;
+  }
+  box.innerHTML = S.succubi.map(s => {
+    const perm = s.contract === "permanent";
+    const defTag = s.defect ? `<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>` : "";
+    return `<div class="succubus-card">
+      <div class="succubus-top">
+        <div class="avatar">${escapeHtml(s.name.charAt(0))}</div>
+        <div>
+          <div class="succubus-name">${escapeHtml(s.name)} ${perm ? '<span class="tag tag-safe">永久契約</span>' : '<span class="tag tag-muted">暫時契約</span>'}</div>
+          <div class="succubus-sub">${escapeHtml(s.raceName)} · ${escapeHtml(s.personalityName)} ${defTag}</div>
+        </div>
+      </div>
+      <div class="stat-grid">
+        ${statItem("好感", s.affection, "bar-affection")}
+        ${statItem("服從", s.obedience, "bar-obedience")}
+        ${statItem("壓力", s.stress, "bar-stress")}
+        ${statItem("飢餓", s.hunger, "bar-hunger")}
+      </div>
+      <div class="succubus-actions">
+        ${perm ? "" : `<button class="btn" onclick="openSellFlow('${s.id}')">契約轉讓</button>`}
+        ${perm ? "" : `<button class="btn" onclick="openContractFlow('${s.id}')">簽訂永久契約</button>`}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- 背包 ---------- */
+function renderInventory() {
+  const box = document.getElementById("inventory-list");
+  if (!S.inventory.length) {
+    box.innerHTML = `<div class="card"><p style="color:var(--ink-soft);font-size:13.5px">背包空空如也。緋夜的道具，可到道具商店裡尋。</p></div>`;
+    return;
+  }
+  const counts = {};
+  S.inventory.forEach(id => counts[id] = (counts[id] || 0) + 1);
+  box.innerHTML = Object.keys(counts).map(id => {
+    const it = getItem(id);
+    if (!it) return "";
+    const isCodex = it.category === "高階";
+    const eff = `好感${signed(it.effects.affection)}　服從${signed(it.effects.obedience)}　壓力${signed(it.effects.stress)}　飢餓${signed(it.effects.hunger)}`;
+    return `<div class="item-card ${isCodex ? "codex" : ""}">
+      <div class="item-head"><span class="item-name">${escapeHtml(it.name)} ×${counts[id]}</span><span class="tag ${isCodex ? "tag-risk" : "tag-muted"}">${escapeHtml(it.category)}</span></div>
+      <div class="item-desc">${escapeHtml(it.desc)}</div>
+      <div class="item-effects">${eff}</div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- 房產 ---------- */
+function renderProperty() {
+  const box = document.getElementById("property-list");
+  box.innerHTML = DISTRICTS.map(d => {
+    const openCls = S.currentDistrictId === d.id ? " open" : "";
+    return `<div class="district-block${openCls}" data-district="${d.id}">
+      <div class="district-head" onclick="toggleDistrict('${d.id}')">
+        <div><div class="name">${escapeHtml(d.name)} ${d.isHigh ? '<span class="tag tag-safe">高級街區</span>' : ""}</div><div class="desc">${escapeHtml(d.desc)}</div></div>
+      </div>
+      <div class="district-body">
+        ${d.houses.map(h => {
+          const owned = S.ownedHouses.includes(h.id);
+          const current = S.currentHouseId === h.id;
+          return `<div class="house-row">
+            <div class="info"><div class="name">${escapeHtml(h.name)} ${current ? '<span class="tag tag-safe">現居</span>' : ""}</div><div class="desc">${escapeHtml(h.desc)}</div></div>
+            ${current ? "" : owned ? `<button class="btn" onclick="handleMoveHouse('${h.id}')">遷入</button>` : `<button class="btn btn-accent" onclick="handleBuyHouse('${h.id}')">${h.price} 金 購入</button>`}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- 市場（購買魅魔） ---------- */
+function openMarketChoiceModal() {
+  document.getElementById("market-title").textContent = "緋夜市場";
+  document.getElementById("market-body").innerHTML = `
+    <div class="market-intro">今夜，你要踏入哪一扇門？</div>
+    <button class="btn" onclick="openMarket('official')">官方契約市場 <span class="tag tag-safe">低風險</span></button>
+    <button class="btn" onclick="openMarket('blackmarket')">暗巷黑市 <span class="tag tag-risk">高風險</span></button>`;
+  openModal("modal-market");
+}
+
+function renderMarket() {
+  const info = MARKET_INFO[S.market.type];
+  if (!info) return;
+  document.getElementById("market-title").textContent = info.name;
+  document.getElementById("market-body").innerHTML = `
+    <div class="market-intro">${escapeHtml(info.desc)}　<span class="tag ${info.type === "official" ? "tag-safe" : "tag-risk"}">${info.riskLabel}</span></div>
+    ${S.market.candidates.map(c => `
+      <div class="market-card ${info.type}" onclick="inspectCandidate('${c.id}')">
+        <div class="top"><span class="name">${escapeHtml(c.name)}</span><span class="price">${c.price} 金</span></div>
+        <div class="meta">${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)} · <span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
+        <div class="background">${escapeHtml(c.background)}</div>
+      </div>`).join("")}`;
+  openModal("modal-market");
+}
+
+function renderCandidateDetail(c) {
+  const body = document.getElementById("market-body");
+  body.innerHTML = `
+    <div class="candidate-detail">
+      <div class="row"><b>${escapeHtml(c.name)}</b>　<span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
+      <div class="row"><b>外貌</b>　${escapeHtml(c.appearance)}</div>
+      <div class="row"><b>氣味</b>　${escapeHtml(c.scent)}</div>
+      <div class="row"><b>種族</b>　${escapeHtml(c.raceName)}　${escapeHtml(c.raceDesc)}</div>
+      <div class="row"><b>個性</b>　${escapeHtml(c.personalityName)}　${escapeHtml(c.personalityDesc)}</div>
+      ${c.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(c.defect.name)}</span>　${escapeHtml(c.defect.desc)}</div>` : ""}
+      <div class="row"><b>來歷</b>　${escapeHtml(c.background)}</div>
+      <div class="row"><b>價格</b>　${c.price} 金</div>
+      <button class="btn btn-accent" onclick="showConfirm('${c.id}')">決定購買</button>
+      <button class="btn" onclick="renderMarket()">返回清單</button>
+    </div>`;
+}
+
+function showConfirmModal(c) {
+  document.getElementById("confirm-title").textContent = "契約確認";
+  document.getElementById("confirm-body").innerHTML = `
+    <p style="font-size:14px">你確定要以 <b style="color:var(--accent-warn)">${c.price} 金</b> 簽下 ${escapeHtml(c.name)} 嗎？</p>
+    <p style="font-size:12.5px;color:var(--ink-soft)">${escapeHtml(c.risk)} · ${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)}</p>`;
+  document.getElementById("confirm-actions").innerHTML = `
+    <button class="btn" onclick="closeModal('modal-confirm')">再想想</button>
+    <button class="btn btn-accent" onclick="confirmPurchase()">確定締約</button>`;
+  openModal("modal-confirm");
+}
+
+/* ---------- 道具商店 ---------- */
+let currentShopType = "official";
+
+function openShopChoice() {
+  document.getElementById("shop-title").textContent = "道具商店";
+  document.getElementById("shop-body").innerHTML = `
+    <div class="market-intro">今夜，你要推開哪一扇鋪門？</div>
+    <button class="btn" onclick="openShop('official')">官方道具行 <span class="tag tag-safe">正規 · 入門補品</span></button>
+    <button class="btn" onclick="openShop('blackmarket')">暗巷黑市道具鋪 <span class="tag tag-risk">違禁 · 高階</span></button>`;
+  openModal("modal-shop");
+}
+
+function openShop(type) {
+  currentShopType = type;
+  const info = SHOP_INFO[type];
+  if (!info) return;
+  document.getElementById("shop-title").textContent = info.name;
+  renderShop(type);
+  openModal("modal-shop");
+}
+
+function renderShop(type) {
+  const info = SHOP_INFO[type];
+  const list = shopItems(type);
+  const body = document.getElementById("shop-body");
+
+  const itemsHtml = list.map(it => {
+    const rank = getRank(it.rankReq);
+    const rankText = it.rankReq <= 1 ? "入門" : `解鎖 ${rank.name}`;
+    const locked = S.master.rank < it.rankReq;
+    const poor = S.master.gold < it.price;
+    const owned = hasItem(it.id) ? ' <span class="tag tag-safe">已持有</span>' : "";
+    const eff = `好感${signed(it.effects.affection)} 服從${signed(it.effects.obedience)} 壓力${signed(it.effects.stress)} 飢餓${signed(it.effects.hunger)}`;
+    const btnLabel = locked ? "階級不足" : (poor ? "金幣不足" : "購買");
+    return `<div class="market-card ${type === "blackmarket" ? "blackmarket" : "official"}">
+      <div class="top"><span class="name">${escapeHtml(it.name)}${owned}</span><span class="price">${it.price} 金</span></div>
+      <div class="meta"><span class="tag ${type === "blackmarket" ? "tag-risk" : "tag-muted"}">${escapeHtml(it.category)}</span> · ${rankText}${locked ? ' <span class="tag tag-risk">階級不足</span>' : ""}</div>
+      <div class="background">${escapeHtml(it.desc)}</div>
+      <div class="meta">${eff}</div>
+      <button class="btn ${(locked || poor) ? "" : "btn-accent"}" onclick="handleBuyItem('${it.id}')" ${(locked || poor) ? "disabled" : ""}>${btnLabel}</button>
+    </div>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="market-intro">${escapeHtml(info.desc)}　<span class="tag ${type === "blackmarket" ? "tag-risk" : "tag-safe"}">${info.riskLabel}</span></div>
+    <button class="btn" onclick="openShopChoice()">返回選擇</button>
+    ${itemsHtml}`;
+}
+
+function handleBuyItem(itemId) {
+  if (buyItem(itemId)) {
+    renderShop(currentShopType);
+    renderInventory();
+    renderStatusBar();
+    showToast(`已購入「${getItem(itemId).name}」。`);
+    if (typeof saveGame === "function") saveGame();
+  }
+}
+
+/* ---------- 出售 ---------- */
+function openSellFlow(succubusId) {
+  const suc = getSuccubus(succubusId);
+  if (!suc) return;
+  if (suc.contract === "permanent") { showToast("她已締下永久之契，不能再轉讓。"); return; }
+  document.getElementById("sell-title").textContent = "契約轉讓 · " + suc.name;
+  document.getElementById("sell-body").innerHTML = `
+    <div class="market-intro">你想將 ${escapeHtml(suc.name)} 轉往何處？</div>
+    <button class="btn" onclick="prepareSellAndRender('${succubusId}','official')">官方契約廳 <span class="tag tag-safe">低風險 · 收價低</span></button>
+    <button class="btn" onclick="prepareSellAndRender('${succubusId}','blackmarket')">暗巷黑市 <span class="tag tag-risk">高風險 · 收價高</span></button>
+    <button class="btn" onclick="prepareSellAndRender('${succubusId}','auction')">拍賣會 <span class="tag tag-safe">最高價 · 限高等級</span></button>`;
+  openModal("modal-sell");
+}
+
+function prepareSellAndRender(succubusId, channel) {
+  const st = prepareSell(succubusId, channel);
+  if (!st) { closeModal("modal-sell"); renderAll(); return; }
+  renderSellState(st);
+}
+
+function renderSellState(st) {
+  const body = document.getElementById("sell-body");
+  const suc = getSuccubus(st.succubusId);
+  if (st.weird) {
+    body.innerHTML = `
+      <div class="candidate-detail">
+        <div class="row" style="color:var(--accent-warn);font-weight:700">—— 有人攔下了你的去路 ——</div>
+        <div class="row"><b>${escapeHtml(st.weird.name)}</b></div>
+        <div class="row">${escapeHtml(st.weird.flavor)}</div>
+        <div class="row"><b>開價</b>　${st.price} 金</div>
+        <div class="row" style="font-size:12.5px;color:var(--ink-soft)">${escapeHtml(st.weird.consequenceText)}</div>
+        <div class="modal-actions" style="padding:0;border:none">
+          <button class="btn" onclick="refuseSell()">不賣</button>
+          <button class="btn btn-accent" onclick="acceptSell()">賣了</button>
+        </div>
+      </div>`;
+  } else {
+    const note = st.channel === "auction" ? `（拍賣會抽成 ${Math.round(AUCTION_INFO.commission * 100)}%）` : "";
+    const channelDesc = st.channel === "official" ? "官方契約廳手續正規，估價保守。" : st.channel === "blackmarket" ? "暗巷掮客開出的價碼。" : "燈海中央，競價落槌。";
+    body.innerHTML = `
+      <div class="candidate-detail">
+        <div class="row"><b>${escapeHtml(suc ? suc.name : "")}</b> 的轉讓</div>
+        <div class="row">${channelDesc}</div>
+        <div class="row"><b>成交價</b>　${st.price} 金 ${note}</div>
+        <div class="modal-actions" style="padding:0;border:none">
+          <button class="btn" onclick="closeModal('modal-sell')">再想想</button>
+          <button class="btn btn-accent" onclick="acceptSell()">確定轉讓</button>
+        </div>
+      </div>`;
+  }
+}
+
+function acceptSell() {
+  const ok = executeSell();
+  closeModal("modal-sell");
+  renderAll();
+  showToast(ok ? "契約已轉讓。" : "交易未能完成。");
+}
+
+function refuseSell() {
+  if (S.sellState && S.sellState.weird) {
+    pushLog("system", "你搖搖頭，攏緊了披風，牽著她離開那雙不安分的目光。");
+  }
+  S.sellState = null;
+  closeModal("modal-sell");
+  renderAll();
+}
+
+/* ---------- 永久契約 ---------- */
+function openContractFlow(succubusId) {
+  const suc = getSuccubus(succubusId);
+  if (!suc) return;
+  const title = document.querySelector("#modal-contract .modal-head h2");
+  if (title) title.textContent = "永久契約 · " + suc.name;
+  const eligible = suc.affection >= CONTRACT_INFO.permanentAffectionReq;
+  const affordable = S.master.gold >= CONTRACT_INFO.permanentCost;
+  document.getElementById("contract-body").innerHTML = `
+    <div class="candidate-detail">
+      <div class="row">${escapeHtml(CONTRACT_INFO.permanentDesc)}</div>
+      <div class="row"><b>締約條件</b>　好感 ≥ ${CONTRACT_INFO.permanentAffectionReq}（目前 ${suc.affection}）</div>
+      <div class="row"><b>締約之禮</b>　${CONTRACT_INFO.permanentCost} 金</div>
+      <div class="row"><b>永恆回報</b>　${escapeHtml(CONTRACT_INFO.bonusesDesc)}</div>
+      <div class="modal-actions" style="padding:0;border:none">
+        <button class="btn" onclick="closeModal('modal-contract')">再想想</button>
+        <button class="btn btn-accent" onclick="doSignContract('${succubusId}')" ${(eligible && affordable) ? "" : "disabled"}>以血為誓</button>
+      </div>
+    </div>`;
+  openModal("modal-contract");
+}
+
+function doSignContract(succubusId) {
+  const ok = signPermanentContract(succubusId);
+  closeModal("modal-contract");
+  renderAll();
+  showToast(ok ? "永久之契，落定。" : "締約未成。");
 }

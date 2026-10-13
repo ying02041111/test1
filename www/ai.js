@@ -26,7 +26,15 @@ function normalizeApiUrl(url) {
 
 function toNum(v, d) { const n = parseFloat(v); return isNaN(n) ? d : n; }
 
-/* 組出請求體（含溫度／Top P／深度思考） */
+/* 診斷：把 AI 失敗原因顯示在劇情裡 */
+function aiDiag(msg) {
+  const full = "［AI］" + msg;
+  try {
+    if (typeof appendStoryMessage === "function") appendStoryMessage("system", full);
+    else if (typeof pushLog === "function") pushLog("system", full);
+  } catch (_) {}
+}
+
 function buildRequestBody(cfg, userText, maxTokens) {
   const body = {
     model: cfg.model || "gpt-4o-mini",
@@ -133,22 +141,43 @@ function parseAIJson(text) {
 /* ---------- 呼叫外部 AI ---------- */
 async function callStoryAI(userText) {
   const cfg = getApiSettings();
-  if (!cfg.url || !cfg.key) return mockNarrativeResponse(userText);
+  if (!cfg.url || !cfg.key) {
+    aiDiag("尚未設定 API（缺 Key 或 URL），改用離線模式。");
+    return mockNarrativeResponse(userText);
+  }
+
   const url = normalizeApiUrl(cfg.url);
+  let res;
   try {
-    const res = await fetch(url, {
+    res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
       body: JSON.stringify(buildRequestBody(cfg, userText, 700))
     });
-    if (!res.ok) return mockNarrativeResponse(userText);
-    const data = await res.json();
-    const content = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : "";
-    const parsed = parseAIJson(content);
-    return parsed || mockNarrativeResponse(userText);
   } catch (e) {
+    aiDiag("連線失敗（網路或跨域）：" + (e && e.message ? e.message : e));
     return mockNarrativeResponse(userText);
   }
+
+  if (!res.ok) {
+    let t = "";
+    try { t = await res.text(); } catch (_) {}
+    aiDiag(`回應錯誤 ${res.status}（${url}）：${(t || "").slice(0, 140)}`);
+    return mockNarrativeResponse(userText);
+  }
+
+  let data;
+  try { data = await res.json(); }
+  catch (e) { aiDiag("回應不是 JSON。"); return mockNarrativeResponse(userText); }
+
+  const msg = data && data.choices && data.choices[0] && data.choices[0].message;
+  const content = msg ? (msg.content || "") : "";
+  const parsed = parseAIJson(content);
+  if (!parsed) {
+    aiDiag("回覆無法解析成 JSON：" + (content || "").slice(0, 120));
+    return mockNarrativeResponse(userText);
+  }
+  return parsed;
 }
 
 /* ---------- 連線測試 ---------- */
@@ -171,14 +200,14 @@ async function testApiConnection() {
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
       body: JSON.stringify(body)
     });
-    if (res.ok) return { ok: true, msg: "連線成功，夜路已通。" };
+    if (res.ok) return { ok: true, msg: "連線成功，夜路已通（" + url + "）。" };
 
     const txt = await res.text();
     let hint = "";
-    if (res.status === 404) hint = "（404＝找不到端點：URL 路徑不對，通常是少了 /chat/completions）";
+    if (res.status === 404) hint = "（404＝找不到端點：URL 路徑不對）";
     else if (res.status === 401) hint = "（401＝API Key 無效或未授權）";
     else if (res.status === 429) hint = "（429＝請求太頻繁或額度不足）";
-    else if (res.status === 400) hint = "（400＝請求格式或模型名稱可能有誤）";
+    else if (res.status === 400) hint = "（400＝模型名稱或參數有誤，可先把深度思考關掉試試）";
     return { ok: false, msg: `連線失敗：${res.status}${hint} ${(txt || "").slice(0, 90)}` };
   } catch (e) {
     return { ok: false, msg: "連線失敗（無法觸及伺服器）：" + e.message };

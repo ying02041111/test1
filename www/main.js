@@ -1,69 +1,87 @@
 /* ============================================================
-   《緋夜飼育錄》主流程與事件綁定 main.js
+   《緋夜飼育錄》主流程 main.js（防呆版）
    ============================================================ */
 
+function $(id) { return document.getElementById(id); }
+
+/* WebView 沒有 console，把錯誤直接印在畫面上 */
+function showErrorBox(msg) {
+  try {
+    const old = $("err-box");
+    if (old) old.remove();
+    const box = document.createElement("div");
+    box.id = "err-box";
+    box.style.cssText = "position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;background:#5C4741;color:#fff;padding:12px 14px;border-radius:10px;font-size:12px;line-height:1.5;word-break:break-all;box-shadow:0 4px 20px rgba(0,0,0,.3);";
+    box.textContent = "錯誤：" + msg;
+    document.body.appendChild(box);
+  } catch (_) {}
+}
+
+window.addEventListener("error", function (e) {
+  showErrorBox(e.message || "未知錯誤");
+});
+window.addEventListener("unhandledrejection", function (e) {
+  const r = e.reason;
+  showErrorBox("非同步錯誤：" + (r && r.message ? r.message : String(r)));
+});
+
 function init() {
-  ensureState();
-  const loaded = loadGame();
-  if (!loaded) {
-    S = defaultState();
-    GAME_INTRO.forEach(line => appendStoryMessage("system", line));
-    S.currentChoices = [
-      "踏進高塔契約廳，去挑一雙屬於你的眼睛。",
-      "先踱到緋夜舊城的街頭，聽聽今晚的風聲。"
-    ];
-    S.started = true;
+  try {
+    ensureState();
+    const loaded = loadGame();
+    if (!loaded) {
+      S = defaultState();
+      GAME_INTRO.forEach(line => appendStoryMessage("system", line));
+      S.currentChoices = [
+        "踏進高塔契約廳，去挑一雙屬於你的眼睛。",
+        "先踱到緋夜舊城的街頭，聽聽今晚的風聲。"
+      ];
+      S.started = true;
+    }
+    bindEvents();
+    renderAll();
+  } catch (e) {
+    showErrorBox("初始化失敗：" + (e.message || e));
   }
-  bindEvents();
-  renderAll();
 }
 
 function bindEvents() {
-  document.querySelectorAll(".nav-btn").forEach(b => {
-    b.addEventListener("click", () => switchTab(b.dataset.tab));
-  });
+  document.querySelectorAll(".nav-btn").forEach(b => b.addEventListener("click", () => switchTab(b.dataset.tab)));
+  document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => closeModal(b.dataset.close)));
+  document.querySelectorAll(".modal-overlay").forEach(o => o.addEventListener("click", e => { if (e.target === o) closeModal(o.id); }));
 
-  document.querySelectorAll("[data-close]").forEach(b => {
-    b.addEventListener("click", () => closeModal(b.dataset.close));
-  });
+  const send = $("btn-send"); if (send) send.addEventListener("click", handleSendAction);
+  const input = $("story-input-field"); if (input) input.addEventListener("keydown", e => { if (e.key === "Enter") handleSendAction(); });
 
-  document.querySelectorAll(".modal-overlay").forEach(o => {
-    o.addEventListener("click", e => { if (e.target === o) closeModal(o.id); });
-  });
-
-  document.getElementById("btn-send").addEventListener("click", handleSendAction);
-  document.getElementById("story-input-field").addEventListener("keydown", e => { if (e.key === "Enter") handleSendAction(); });
-
-  document.getElementById("choice-list").addEventListener("click", e => {
+  const cl = $("choice-list"); if (cl) cl.addEventListener("click", e => {
     const btn = e.target.closest(".choice-btn");
     if (!btn) return;
     const i = parseInt(btn.dataset.i, 10);
     if (S.currentChoices[i] != null) handleChoiceClick(S.currentChoices[i]);
   });
 
-  document.getElementById("master-style").addEventListener("change", e => { S.master.style = e.target.value; saveGame(); });
-  document.getElementById("master-persona").addEventListener("input", e => { S.master.persona = e.target.value; });
+  const styleSel = $("master-style"); if (styleSel) styleSel.addEventListener("change", e => { S.master.style = e.target.value; saveGame(); });
+  const persona = $("master-persona"); if (persona) persona.addEventListener("input", e => { S.master.persona = e.target.value; });
 
-  document.getElementById("btn-open-market").addEventListener("click", openMarketChoiceModal);
-  document.getElementById("btn-open-shop").addEventListener("click", openShopChoice);
-  document.getElementById("btn-open-api").addEventListener("click", openApiModal);
-  document.getElementById("btn-api-save").addEventListener("click", saveApiSettings);
-  document.getElementById("btn-api-test").addEventListener("click", doTestApi);
-  document.getElementById("btn-reset").addEventListener("click", openResetConfirm);
+  const bm = $("btn-open-market"); if (bm) bm.addEventListener("click", openMarketChoiceModal);
+  const bs = $("btn-open-shop"); if (bs) bs.addEventListener("click", openShopChoice);
+  const ba = $("btn-open-api"); if (ba) ba.addEventListener("click", openApiModal);
+  const bas = $("btn-api-save"); if (bas) bas.addEventListener("click", saveApiSettings);
+  const bat = $("btn-api-test"); if (bat) bat.addEventListener("click", doTestApi);
+  const br = $("btn-reset"); if (br) br.addEventListener("click", openResetConfirm);
 
-  document.getElementById("api-temperature").addEventListener("input", e => {
-    document.getElementById("temp-val").textContent = e.target.value;
-  });
-  document.getElementById("api-topp").addEventListener("input", e => {
-    document.getElementById("topp-val").textContent = e.target.value;
-  });
+  const t = $("api-temperature"); const tv = $("temp-val");
+  if (t) t.addEventListener("input", () => { if (tv) tv.textContent = t.value; });
+  const tp = $("api-topp"); const tpv = $("topp-val");
+  if (tp) tp.addEventListener("input", () => { if (tpv) tpv.textContent = tp.value; });
 
   window.addEventListener("beforeunload", saveGame);
 }
 
 /* ---------- 互動 ---------- */
 function handleSendAction() {
-  const field = document.getElementById("story-input-field");
+  const field = $("story-input-field");
+  if (!field) return;
   const text = field.value.trim();
   if (!text) return;
   field.value = "";
@@ -86,25 +104,30 @@ function maybeUseItemByText(text) {
 }
 
 async function proceed(text) {
-  if (detectNav(text)) return;
+  try {
+    if (detectNav(text)) return;
 
-  const itemId = maybeUseItemByText(text);
-  if (itemId) consumeItemByStory(itemId);
+    const itemId = maybeUseItemByText(text);
+    if (itemId) consumeItemByStory(itemId);
 
-  showThinking();
-  const result = await callStoryAI(text);
-  hideThinking();
-  processAICommands(result);
+    showThinking();
+    const result = await callStoryAI(text);
+    hideThinking();
+    processAICommands(result);
 
-  if (!S.currentChoices || !S.currentChoices.length) {
-    const fallback = mockNarrativeResponse(text);
-    if (fallback.narrative) {
-      appendStoryMessage("system", sceneHeader());
-      appendStoryMessage("story", fallback.narrative);
+    if (!S.currentChoices || !S.currentChoices.length) {
+      const fallback = mockNarrativeResponse(text);
+      if (fallback.narrative) {
+        appendStoryMessage("system", sceneHeader());
+        appendStoryMessage("story", fallback.narrative);
+      }
+      processAICommands({ commands: fallback.commands || [], choices: fallback.choices || [] });
     }
-    processAICommands({ commands: fallback.commands || [], choices: fallback.choices || [] });
+    saveGame();
+  } catch (e) {
+    hideThinking();
+    showErrorBox("劇情處理失敗：" + (e.message || e));
   }
-  saveGame();
 }
 
 function detectNav(text) {
@@ -119,7 +142,7 @@ function handleBuyHouse(houseId) {
   const house = getHouse(houseId);
   if (!house) return;
   const d = DISTRICTS.find(x => x.houses.some(h => h.id === houseId));
-  const rankReq = d ? districtRankReq(d.id) : 1;
+  const rankReq = d ? (typeof districtRankReq === "function" ? districtRankReq(d.id) : 1) : 1;
   if (S.master.rank < rankReq) {
     showToast(`需先晉升至【${getRank(rankReq).name}】才能進入${d ? d.name : ""}。`);
     return;
@@ -138,7 +161,7 @@ function handleMoveHouse(houseId) {
   const house = getHouse(houseId);
   if (!house || !S.ownedHouses.includes(houseId)) return;
   const d = DISTRICTS.find(x => x.houses.some(h => h.id === houseId));
-  const rankReq = d ? districtRankReq(d.id) : 1;
+  const rankReq = d ? (typeof districtRankReq === "function" ? districtRankReq(d.id) : 1) : 1;
   if (S.master.rank < rankReq) {
     showToast(`需先晉升至【${getRank(rankReq).name}】才能進入${d ? d.name : ""}。`);
     return;
@@ -157,11 +180,13 @@ function toggleDistrict(id) {
 
 /* ---------- 重新開始 ---------- */
 function openResetConfirm() {
-  document.getElementById("confirm-title").textContent = "重新開始";
-  document.getElementById("confirm-body").innerHTML = `
+  const title = $("confirm-title"); if (title) title.textContent = "重新開始";
+  const body = $("confirm-body");
+  if (body) body.innerHTML = `
     <p style="font-size:14px">你確定要抹去所有進度，重新開始嗎？</p>
     <p style="font-size:12.5px;color:var(--ink-soft)">此舉將刪除存檔，且無法復原。</p>`;
-  document.getElementById("confirm-actions").innerHTML = `
+  const actions = $("confirm-actions");
+  if (actions) actions.innerHTML = `
     <button class="btn" onclick="closeModal('modal-confirm')">取消</button>
     <button class="btn btn-danger" onclick="doResetGame()">確定刪除</button>`;
   openModal("modal-confirm");
@@ -185,32 +210,33 @@ function doResetGame() {
 /* ---------- API 設定 ---------- */
 function openApiModal() {
   const cfg = getApiSettings();
-  document.getElementById("api-key").value = cfg.key || "";
-  document.getElementById("api-url").value = cfg.url || "";
-  document.getElementById("api-model").value = cfg.model || "";
-  document.getElementById("api-thinking").checked = !!cfg.thinking;
+  const k = $("api-key"); if (k) k.value = cfg.key || "";
+  const u = $("api-url"); if (u) u.value = cfg.url || "";
+  const m = $("api-model"); if (m) m.value = cfg.model || "";
+  const th = $("api-thinking"); if (th) th.checked = !!cfg.thinking;
 
   const temp = (cfg.temperature != null && cfg.temperature !== "") ? cfg.temperature : 0.9;
   const topp = (cfg.topP != null && cfg.topP !== "") ? cfg.topP : 1.0;
-  document.getElementById("api-temperature").value = temp;
-  document.getElementById("temp-val").textContent = temp;
-  document.getElementById("api-topp").value = topp;
-  document.getElementById("topp-val").textContent = topp;
+  const t = $("api-temperature"); if (t) t.value = temp;
+  const tv = $("temp-val"); if (tv) tv.textContent = temp;
+  const tp = $("api-topp"); if (tp) tp.value = topp;
+  const tpv = $("topp-val"); if (tpv) tpv.textContent = topp;
 
-  const box = document.getElementById("api-test-result");
-  box.className = "api-test-result";
-  box.textContent = "";
+  const box = $("api-test-result");
+  if (box) { box.className = "api-test-result"; box.textContent = ""; }
   openModal("modal-api");
 }
 
 function readApiForm() {
+  const g = id => { const el = $(id); return el ? el.value.trim() : ""; };
+  const chk = id => { const el = $(id); return el ? el.checked : false; };
   return {
-    key: document.getElementById("api-key").value.trim(),
-    url: document.getElementById("api-url").value.trim(),
-    model: document.getElementById("api-model").value.trim(),
-    thinking: document.getElementById("api-thinking").checked,
-    temperature: document.getElementById("api-temperature").value,
-    topP: document.getElementById("api-topp").value
+    key: g("api-key"),
+    url: g("api-url"),
+    model: g("api-model"),
+    thinking: chk("api-thinking"),
+    temperature: g("api-temperature") || "0.9",
+    topP: g("api-topp") || "1.0"
   };
 }
 
@@ -221,13 +247,15 @@ function saveApiSettings() {
 }
 
 async function doTestApi() {
-  const box = document.getElementById("api-test-result");
-  box.className = "api-test-result";
-  box.textContent = "測試中……";
+  const box = $("api-test-result");
+  if (box) { box.className = "api-test-result"; box.textContent = "測試中……"; }
   persistApiSettings(readApiForm());
-  const r = await testApiConnection();
-  box.className = "api-test-result " + (r.ok ? "ok" : "fail");
-  box.textContent = r.msg;
+  try {
+    const r = await testApiConnection();
+    if (box) { box.className = "api-test-result " + (r.ok ? "ok" : "fail"); box.textContent = r.msg; }
+  } catch (e) {
+    if (box) { box.className = "api-test-result fail"; box.textContent = "測試出錯：" + (e.message || e); }
+  }
 }
 
 /* ---------- 啟動 ---------- */

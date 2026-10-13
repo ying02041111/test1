@@ -76,7 +76,9 @@ function buildSystemPrompt() {
   const personaText = m.persona ? m.persona : "（未設定，請自行揣摩主人形象）";
   const factsText = (S.facts && S.facts.length) ? "\n【玩家已知事實】" + S.facts.join("；") : "";
 
-  return `你是《緋夜飼育錄》的敘事引擎，一款成人向（18+ 氛圍）魅魔飼育文字遊戲的旁白。你只輸出一個合法 JSON 物件，不要輸出任何解釋、前綴或 markdown 程式碼框。
+  return `你是《緋夜飼育錄》的敘事引擎，一款成人向（18+ 氛圍）魅魔飼育文字遊戲的旁白。
+你「只能」輸出一個合法的 JSON 物件，不要輸出任何解釋、前言或 markdown 程式碼框。
+JSON 內所有字串的換行，一律用 \n 表示，不可直接斷行。
 
 【輸出格式】
 {"narrative":"…","choices":["…","…"],"commands":[]}
@@ -129,13 +131,67 @@ ${itemText}
 ${factsText}`;
 }
 
-/* ---------- JSON 解析 ---------- */
+/* ---------- JSON 寬鬆解析 ---------- */
+function extractJsonObj(t) {
+  const start = t.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < t.length; i++) {
+    const ch = t[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+    } else {
+      if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") { depth--; if (depth === 0) return t.slice(start, i + 1); }
+    }
+  }
+  return null;
+}
+
+function escapeCtrlInStrings(raw) {
+  let out = "", inStr = false, esc = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inStr) {
+      if (esc) { out += ch; esc = false; continue; }
+      if (ch === "\\") { out += ch; esc = true; continue; }
+      if (ch === '"') { out += ch; inStr = false; continue; }
+      if (ch === "\n") { out += "\\n"; continue; }
+      if (ch === "\r") { out += "\\r"; continue; }
+      if (ch === "\t") { out += "\\t"; continue; }
+      out += ch;
+    } else {
+      if (ch === '"') inStr = true;
+      out += ch;
+    }
+  }
+  return out;
+}
+
 function parseAIJson(text) {
   if (!text) return null;
-  let t = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  const start = t.indexOf("{"), end = t.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-  try { return JSON.parse(t.slice(start, end + 1)); } catch (e) { return null; }
+  const t = String(text).trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const objText = extractJsonObj(t) || t;
+
+  try { return JSON.parse(objText); } catch (_) {}
+  try { return JSON.parse(escapeCtrlInStrings(objText)); } catch (_) {}
+
+  // 最後手段：硬抽 narrative 與 choices
+  const salv = {};
+  const nm = t.match(/"narrative"\s*:\s*"([\s\S]*?)"\s*,\s*"choices"/);
+  if (nm) salv.narrative = nm[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
+  const cm = t.match(/"choices"\s*:\s*\[([\s\S]*?)\]/);
+  if (cm) {
+    const arr = cm[1].match(/"([\s\S]*?)"/g);
+    if (arr) salv.choices = arr.map(s => s.slice(1, -1).replace(/\\n/g, "\n").replace(/\\"/g, '"'));
+  }
+  if (salv.narrative && salv.choices && salv.choices.length) {
+    return { narrative: salv.narrative, choices: salv.choices, commands: [] };
+  }
+  return null;
 }
 
 /* ---------- 呼叫外部 AI ---------- */
@@ -152,7 +208,7 @@ async function callStoryAI(userText) {
     res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
-      body: JSON.stringify(buildRequestBody(cfg, userText, 700))
+      body: JSON.stringify(buildRequestBody(cfg, userText, 1200))
     });
   } catch (e) {
     aiDiag("連線失敗（網路或跨域）：" + (e && e.message ? e.message : e));
@@ -174,7 +230,13 @@ async function callStoryAI(userText) {
   const content = msg ? (msg.content || "") : "";
   const parsed = parseAIJson(content);
   if (!parsed) {
-    aiDiag("回覆無法解析成 JSON：" + (content || "").slice(0, 120));
+    const c = (content || "").trim();
+    if (!c) {
+      const hasThink = !!(msg && (msg.reasoning_content || msg.reasoning));
+      aiDiag("AI 沒有回正文" + (hasThink ? "（只有思考內容，可能被長度限制截斷：請關閉深度思考或提高上限）" : "（回覆為空）"));
+    } else {
+      aiDiag(`AI 回覆無法解析（共 ${c.length} 字，前 250 字）：` + c.slice(0, 250));
+    }
     return mockNarrativeResponse(userText);
   }
   return parsed;

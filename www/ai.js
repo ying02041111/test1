@@ -68,6 +68,15 @@ function ownedItemNames() {
   return S.inventory.map(id => { const it = getItem(id); return it ? it.name : ""; }).filter(Boolean);
 }
 
+function ownedGearText() {
+  const out = [];
+  const gear = S.gear || {};
+  for (const id in gear) {
+    if (gear[id] > 0) { const g = (typeof getGearDef === "function") ? getGearDef(id) : null; if (g) out.push(`${g.name}×${gear[id]}`); }
+  }
+  return out.length ? out.join("、") : "（無）";
+}
+
 /* ---------- 前情記憶（上下文連貫） ---------- */
 function ensureHistory() {
   if (!S.history || !Array.isArray(S.history)) S.history = [];
@@ -87,7 +96,7 @@ function recordTurn(userText, narrative) {
   }
 }
 
-/* 把前情拼成一段「前情回顧」文字，塞進系統提示（不要用 assistant 訊息夾帶，免得 AI 模仿純文字忘了 JSON） */
+/* 前情塞進系統提示（切勿用 assistant 訊息夾帶，否則 AI 會模仿純文字、忘了 JSON） */
 function buildHistoryText() {
   const h = ensureHistory();
   if (!h.length) return "";
@@ -114,11 +123,18 @@ function buildSystemPrompt() {
         const contract = s.contract === "permanent" ? "永久契約" : "暫時契約";
         const def = s.defect ? `｜缺陷:${s.defect.name}` : "";
         const pres = s.present ? "在身邊" : ("不在" + (s.place ? `（${s.place}）` : ""));
-        return `[${s.id}] ${s.name}（${s.raceName}｜${s.personalityName}｜${contract}｜${pres}｜好感${s.affection} 服從${s.obedience} 壓力${s.stress} 飢餓${s.hunger}${def}）`;
-      }).join("；")
+        const g = (typeof succubusGrade === "function") ? succubusGrade(s) : { grade: "?", name: "" };
+        const speech = s.speechStyle || (((PERSONALITIES || []).find(p => p.id === s.personality) || {}).speech || "");
+        const gearNames = [];
+        if (s.collar && typeof getGearDef === "function") { const c = getGearDef(s.collar); if (c) gearNames.push(c.name); }
+        if (s.leash && typeof getGearDef === "function") { const l = getGearDef(s.leash); if (l) gearNames.push(l.name); }
+        const gearText = gearNames.length ? `｜配戴:${gearNames.join("、")}` : "";
+        return `[${s.id}] ${s.name}（${s.raceName}｜${s.personalityName}｜${g.grade}級·${g.name}｜${contract}｜${pres}｜好感${s.affection} 服從${s.obedience} 魅惑${s.charm || 0} 體能${s.stamina || 0} 壓力${s.stress} 飢餓${s.hunger}${def}${gearText}）\n　　外貌：${s.appearance}\n　　氣味：${s.scent}\n　　個性：${s.personalityDesc}\n　　說話風格（必須前後一致）：${speech}`;
+      }).join("\n")
     : "（名下尚無魅魔）";
 
   const itemText = ownedItemNames().length ? ownedItemNames().join("、") : "（無）";
+  const gearText = ownedGearText();
   const personaText = m.persona ? m.persona : "（未設定，請自行揣摩主人形象）";
 
   const dirs = getDirectives();
@@ -157,8 +173,15 @@ function buildSystemPrompt() {
 - 若輸入含括號（…），括號內是「動作」。
 - 不論是對話、動作、或兩者同時，你都要回應：針對玩家的話給出對白回應，並把動作確實執行、讓場景前進。先後順序不拘。
 
-【人物在場與位置（極重要，務必嚴格遵守）】
+【角色資料與一致性（極重要，防 OOC）】
 ${succText}
+- 每一隻魅魔都有固定的外貌、氣味、個性與說話風格（見上方角色資料）。無論劇情如何，她的口吻、用詞、自稱、價值觀與行為邏輯都必須前後一致。
+- 不可忽然換個性、換語氣、換自稱，或做出明顯違背她性格的事（OOC）。
+- 外貌與氣味是既定設定，不可擅自改動（例如不可把銀髮寫成黑髮）。
+- 等級（S~F）反映她的身價與歷練：等級越高越從容、越有身價感與教養；越低則越生澀，反應更直接。
+- 若前情回顧裡她已建立某種態度或關係，必須延續，不可重置。
+
+【人物在場與位置（極重要，務必嚴格遵守）】
 - 標記為「在身邊」的角色，才可以出現在當前場景、說話、動作。
 - 標記為「不在」的角色，絕對不可出現在當前場景、不可說話、不可動作、不可被你一起帶走（除非劇情演出你們重逢）。
 - 場景與人物的上下位置要前後連貫：誰在哪裡、誰被留下，都要承接前文，不可讓角色憑空移動或突然出現。
@@ -186,17 +209,24 @@ D. 「轉過來，我幫你洗。」你低聲。
 【調教風格（僅作語氣背景，絕不直接點名）】
 當前風格氣質：${style.name}——${style.desc}。讓語氣貼合，但文中與選項中不得出現「${style.name}」或「風格」等字眼。
 
-【四維如何影響她的態度（務必在對白與舉止中體現）】
+【六維如何影響她的態度（務必在對白與舉止中體現）】
 - 好感：高 → 親暱、主動、依戀；低 → 疏離、戒備、客套。
 - 服從：高 → 順從、聽話、服軟；低 → 頂撞、抗拒、陽奉陰違。
+- 魅惑：高 → 舉手投足皆是勾人的媚，懂得撩撥；低 → 樸素生澀、不諳魅術。
+- 體能：高 → 耐得住折騰、能久戰；低 → 容易疲憊、很快求饒。
 - 壓力：高 → 緊繃、易怒、顫抖、哽咽；低 → 放鬆、慵懶、有餘裕。
 - 飢餓：高 → 渙散、渴求、主動索求；低 → 從容、節制。
-同一句話，會因這四項高低而有截然不同的語氣與反應。
+同一句話，會因這六項高低而有截然不同的語氣與反應。
 - 好感低於 55 時，她必須保有防線與距離，不可一見鍾情、不可瞬間順從。
 
 【玩家背包（僅可引用下列道具，嚴禁提及未擁有的器具）】
 ${itemText}
 - 選項或敘事若要動用道具，只能使用上列物品的「名字」，並以隱晦方式描述；嚴禁出現「情趣玩具」等詞。
+
+【項圈與牽引繩（未配戴、放在包裡的）】
+${gearText}
+- 已配戴的配件列在角色資料的「配戴」欄；她若繫著項圈／牽繩，可被你牽著同行。
+- 不可擅自讓她戴上未購入或未配戴的配件。
 
 【玩家主控】
 階級：${rank.name}；自訂人設：${personaText}。
@@ -208,11 +238,13 @@ ${itemText}
 
 【指令】
 - commands 可選填：
-  {"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"stress":0,"hunger":0}}
+  {"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"charm":0,"stamina":0,"stress":0,"hunger":0}}
   {"type":"item","itemId":"...","succubusId":"..."}
+  {"type":"feed","succubusId":"..."}　（她吃飽了 → 飢餓歸零）
   {"type":"presence","succubusId":"...","present":true/false,"place":"..."}
   {"type":"time","phases":1}　{"type":"gold","amount":0}　{"type":"hp","amount":0}　{"type":"exp","amount":0}
-- succubusId 請使用上面 [ ] 內的 id。數值變動幅度宜小（單項 -5 ~ +5）。使用道具時 itemId 必須在上列背包中。
+- succubusId 請使用上面 [ ] 內的 id。數值變動幅度宜小（單項 -8 ~ +8）。使用道具時 itemId 必須在上列背包中。
+- 只要劇情演出她吃飽、飽足、飲血止飢，就送 feed 指令讓飢餓歸零。
 
 【長期指令（務必長期遵守，直到玩家下指令撤除）】
 ${directiveText}
@@ -297,16 +329,13 @@ function salvagePartial(t) {
   return { narrative: out, choices: choices, commands: [] };
 }
 
-/* 純文字救援：AI 偶爾忘了 JSON、直接吐正文時，把正文當敘事用，別整段丟掉 */
+/* 純文字救援：AI 偶爾忘了 JSON、直接吐正文時，把正文當敘事用 */
 function salvagePlainNarrative(t) {
   let s = String(t || "").trim();
   if (!s) return null;
-  // 去掉開頭的場景行「── … ──」（遊戲會自己補）
   s = s.replace(/^\s*──[^\n]*?──[ \t]*\n?/, "").trim();
-  // 若結尾是「你想怎麼做？」等選項提示，截斷於此
   const cut = s.search(/你想怎麼做|你要怎麼做|接下來怎麼做|你想如何做/);
   if (cut !== -1) s = s.slice(0, cut).trim();
-  // 若某行開頭是 A. B. C. D. 選項，截斷於第一個這類行
   const lines = s.split("\n");
   const out = [];
   for (const ln of lines) {

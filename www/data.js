@@ -6,6 +6,20 @@
 /* ---------- 時間階段 ---------- */
 const SUBPHASE_NAMES = ["清晨", "午後", "傍晚", "深夜"];
 
+/* ---------- 魅魔六維上限 ---------- */
+const STAT_CAPS = { affection: 300, obedience: 300, charm: 300, stamina: 300, stress: 100, hunger: 100 };
+
+/* ---------- 魅魔綜合等級（以 魅惑/服從/體能 平均分判定） ---------- */
+const SUCCUBUS_GRADES = [
+  { grade: "F", name: "雛鳥",     minScore: 0,   priceMult: 1.0, desc: "尚在雛形，血氣與媚態都還生澀。" },
+  { grade: "E", name: "生澀",     minScore: 50,  priceMult: 1.3, desc: "已能勾起眼神，卻還撐不起場面。" },
+  { grade: "D", name: "熟練",     minScore: 90,  priceMult: 1.7, desc: "舉止有度，懂得看主人的眼色進退。" },
+  { grade: "C", name: "優質",     minScore: 130, priceMult: 2.2, desc: "媚意成形，舉手投足皆勾人。" },
+  { grade: "B", name: "上品",     minScore: 170, priceMult: 3.0, desc: "身價不凡，足以登上燈紅街的雅席。" },
+  { grade: "A", name: "極品",     minScore: 210, priceMult: 4.5, desc: "百里挑一，連高塔貴族都要為之側目。" },
+  { grade: "S", name: "緋夜之華", minScore: 250, priceMult: 7.0, desc: "緋夜百年難得的絕色，競價的燈海只為她亮。" }
+];
+
 /* ---------- 主控階級 ---------- */
 const MASTER_RANKS = [
   { rank: 1, name: "見習飼育員", expNeed: 0,    desc: "初入緋夜的你，連夜色都還看不真切。" },
@@ -32,14 +46,20 @@ const RACES = [
   { key: "shade",     name: "影魅",     desc: "無骨無形，只在你熄燈之後，攀上你的背脊低語。" }
 ];
 
-/* ---------- 個性 ---------- */
+/* ---------- 個性（含固定說話風格，用於防 OOC） ---------- */
 const PERSONALITIES = [
-  { id: "proud",   name: "高傲", desc: "她仰著下巴看你，眼裡卻藏不住被你馴服前的倔強。" },
-  { id: "shy",     name: "羞怯", desc: "每次對上視線便別開臉，耳尖紅得像要滴血。" },
-  { id: "seducer", name: "誘惑", desc: "她太清楚自己的魅力，也毫不吝嗇地對你展露。" },
-  { id: "rebel",   name: "叛逆", desc: "你的每一道命令，她都先狠狠瞪你一眼，再軟下膝蓋。" },
-  { id: "clingy",  name: "依賴", desc: "離了你便惶惶不安，夜裡總要蜷在你腳邊才肯閉眼。" },
-  { id: "lazy",    name: "慵懶", desc: "像隻曬足月光的貓，連拒絕你都透著一股漫不經心的媚。" }
+  { id: "proud",   name: "高傲", desc: "她仰著下巴看你，眼裡卻藏不住被你馴服前的倔強。",
+    speech: "自稱「本小姐」，語氣居高臨下，句尾常帶輕哼；心裡越軟，嘴上越硬，被逼急了才會破防。" },
+  { id: "shy",     name: "羞怯", desc: "每次對上視線便別開臉，耳尖紅得像要滴血。",
+    speech: "說話細若蚊蚋、常結巴，句子簡短，頻繁用省略號「……」；被誇會慌張否認，眼睛卻不敢看你。" },
+  { id: "seducer", name: "誘惑", desc: "她太清楚自己的魅力，也毫不吝嗇地對你展露。",
+    speech: "語氣慵懶挑逗，喜歡留懸念、反問你，用詞纏綿，總把話題繞回你身上。" },
+  { id: "rebel",   name: "叛逆", desc: "你的每一道命令，她都先狠狠瞪你一眼，再軟下膝蓋。",
+    speech: "嘴上從不服軟，愛頂嘴、放狠話，句子短促帶刺；行動卻常常背叛她的嘴硬。" },
+  { id: "clingy",  name: "依賴", desc: "離了你便惶惶不安，夜裡總要蜷在你腳邊才肯閉眼。",
+    speech: "語氣黏軟，常撒嬌、討抱，句尾愛拖長音；一提到分離就慌，反覆確認你不會走。" },
+  { id: "lazy",    name: "慵懶", desc: "像隻曬足月光的貓，連拒絕你都透著一股漫不經心的媚。",
+    speech: "語速慢、句子懶散，常打呵欠、答非所問；嘴上敷衍，卻總在你需要時剛好出現。" }
 ];
 
 /* ---------- 缺陷 ---------- */
@@ -80,150 +100,201 @@ const SUCCUBUS_NAMES = [
 
 /* ---------- 道具 ----------
    欄位：desc（文案）、choiceHint（AI 選項用法，僅持有時可用）、
-   effects（四維變動）、masterHp（使用時扣主控體力，可選）、styleTag（語氣）。 ---------- */
+   effects（六維變動：affection/obedience/charm/stamina/stress/hunger）、
+   satiates（吃了是否飽足歸零）、masterHp（扣主控體力）、styleTag（語氣）。 ---------- */
 const ITEMS = [
   /* ============ 日常補品 ============ */
-  { id: "soothe_candy", name: "安撫蜜餞", category: "一般", price: 30, rankReq: 1,
+  { id: "soothe_candy", name: "安撫蜜餞", category: "一般", price: 30, rankReq: 1, satiates: true,
     desc: "裹著蜜糖的果脯，甜意從舌尖一路暖進胃裡。用來安撫初來乍到的緊張，再合適不過。",
     choiceHint: "拈一顆蜜餞，餵進她的嘴裡",
-    effects: { affection: 6, obedience: 1, stress: -4, hunger: -8 }, styleTag: "gentle" },
+    effects: { affection: 6, obedience: 1, stress: -4, hunger: -8, stamina: 2 }, styleTag: "gentle" },
 
-  { id: "herbal_tea", name: "舒緩花草茶", category: "一般", price: 60, rankReq: 1,
+  { id: "herbal_tea", name: "舒緩花草茶", category: "一般", price: 60, rankReq: 1, satiates: true,
     desc: "以夜綻的花草熬煮，溫熱入喉，能撫平她繃緊的每一根神經。",
     choiceHint: "為她斟一杯溫熱的花草茶，看她小口啜飲",
-    effects: { affection: 4, obedience: 0, stress: -8, hunger: -3 }, styleTag: "gentle" },
+    effects: { affection: 4, stress: -8, hunger: -3, stamina: 3 }, styleTag: "gentle" },
 
   { id: "aroma_oil", name: "凝神香薰油", category: "一般", price: 120, rankReq: 2,
     desc: "取自月下香草的凝萃，滴在腕間與頸側，能讓躁動的心緒一點點沉澱。",
     choiceHint: "將香薰油抹上她的頸側，讓她的呼吸慢下來",
-    effects: { affection: 5, obedience: 1, stress: -12, hunger: 0 }, styleTag: "gentle" },
+    effects: { affection: 5, obedience: 1, stress: -12, charm: 3, stamina: 2 }, styleTag: "gentle" },
 
-  { id: "honey_sweet", name: "蜜糖糕", category: "一般", price: 40, rankReq: 1,
+  { id: "honey_sweet", name: "蜜糖糕", category: "一般", price: 40, rankReq: 1, satiates: true,
     desc: "裹著糖霜的小點，甜得她瞇起眼睛。用食物換來的溫順，往往最不設防。",
     choiceHint: "拈起一塊蜜糖糕，遞到她唇邊",
-    effects: { affection: 8, obedience: 2, stress: -3, hunger: -10 }, styleTag: "gentle" },
+    effects: { affection: 8, obedience: 2, stress: -3, hunger: -10, stamina: 2 }, styleTag: "gentle" },
 
   { id: "calming_incense", name: "安神香", category: "一般", price: 50, rankReq: 1,
     desc: "裊裊青煙裡，她的緊繃一寸寸軟下去，像被人抽走了骨頭。",
     choiceHint: "點一爐安神香，讓她的緊繃一寸寸軟下去",
-    effects: { affection: 3, obedience: 1, stress: -8, hunger: 0 }, styleTag: "gentle" },
+    effects: { affection: 3, obedience: 1, stress: -8, stamina: 2 }, styleTag: "gentle" },
 
   /* ============ 調教入門 ============ */
   { id: "soft_whip", name: "羽痕軟皮短鞭", category: "一般", price: 80, rankReq: 1,
     desc: "柔韌的短鞭，落下的力道輕如羽翼，卻能在肌膚上烙下淺淺的緋痕。痛意一閃而逝，規矩卻就此生根。",
     choiceHint: "讓鞭梢輕輕掃過她的背，留下一道淡緋",
-    effects: { affection: 0, obedience: 8, stress: 5, hunger: 0 }, styleTag: "dominant" },
+    effects: { obedience: 8, stress: 5 }, styleTag: "dominant" },
 
   { id: "crimson_gag", name: "緋紅噤聲口枷", category: "一般", price: 120, rankReq: 1,
     desc: "緋紅色的緘口之物，一旦扣上，她便只能發出破碎的嗚咽。那些傲慢的言語，再也無從出口。",
     choiceHint: "替她扣上，讓她的倔強只能化成一串嗚咽",
-    effects: { affection: -1, obedience: 12, stress: 10, hunger: 0 }, styleTag: "dominant" },
+    effects: { affection: -1, obedience: 12, stress: 10 }, styleTag: "dominant" },
 
   { id: "night_beads", name: "幽夜律動玉珠", category: "一般", price: 160, rankReq: 1,
     desc: "一串溫潤的玉珠，貼著體溫便開始細細震顫。沉入最深處，她會先僵住，再一寸寸軟化成水。",
     choiceHint: "讓玉珠沉入她最深處，看她的膝蓋慢慢發軟",
-    effects: { affection: 8, obedience: 0, stress: -5, hunger: 5 }, styleTag: "lust" },
+    effects: { affection: 8, stress: -5, hunger: 5, charm: 4 }, styleTag: "lust" },
 
   { id: "velvet_rope", name: "絲絨束縛繩組", category: "一般", price: 140, rankReq: 1,
     desc: "柔韌的絲絨繩索，一圈圈纏上四肢，便再無反抗的餘地。被縛住的她，只能把自己全然交到你手裡。",
     choiceHint: "一圈圈縛住她的手腕與腳踝，看她放棄掙扎",
-    effects: { affection: 0, obedience: 15, stress: 8, hunger: 0 }, styleTag: "dominant" },
+    effects: { obedience: 15, stress: 8 }, styleTag: "dominant" },
 
   { id: "silk_ribbon", name: "黑絲緞帶", category: "一般", price: 60, rankReq: 1,
     desc: "一條能繞過手腕、也能繫住目光的黑絲。當它落在她的腕上，便不再是普通的緞帶。",
     choiceHint: "一圈一圈繞上她的腕，看她的呼吸亂了分寸",
-    effects: { affection: 1, obedience: 6, stress: 5, hunger: 0 }, styleTag: "dominant" },
+    effects: { affection: 1, obedience: 6, stress: 5, charm: 2 }, styleTag: "dominant" },
 
   { id: "feather_duster", name: "羽毛拂塵", category: "一般", price: 80, rankReq: 1,
     desc: "柔軟得過分的羽毛，輕輕掃過她最敏感的地方，便能逼出她最誠實的求饒。",
     choiceHint: "讓羽毛沿著她的脊線遊走，直到她忍不住縮起肩膀",
-    effects: { affection: 5, obedience: 3, stress: 6, hunger: 2 }, styleTag: "gentle" },
+    effects: { affection: 5, obedience: 3, stress: 6, hunger: 2, charm: 2 }, styleTag: "gentle" },
 
   { id: "candle_wax", name: "燭台之淚", category: "一般", price: 90, rankReq: 2,
     desc: "溫熱的蠟油落在肌膚上凝成緋色。痛與燙交界的瞬間，她會記得是你給的。",
     choiceHint: "讓溫熱的蠟淚落在她的鎖骨，看它凝成緋色",
-    effects: { affection: 0, obedience: 8, stress: 10, hunger: 3 }, styleTag: "dominant" },
+    effects: { obedience: 8, stress: 10, hunger: 3 }, styleTag: "dominant" },
 
-  { id: "silver_collar", name: "銀製項圈", category: "一般", price: 120, rankReq: 2,
+  { id: "silver_collar", name: "銀鎖頸鏈", category: "一般", price: 120, rankReq: 2,
     desc: "內側刻著你的名字。她戴上之後，每一次吞嚥，都會意識到自己屬於誰。",
     choiceHint: "替她繫上，再輕輕一勒，逼她仰起頸子",
-    effects: { affection: -2, obedience: 12, stress: 8, hunger: 0 }, styleTag: "dominant" },
+    effects: { affection: -2, obedience: 12, stress: 8, charm: 1 }, styleTag: "dominant" },
 
   /* ============ 感官制約 ============ */
   { id: "onyx_blindfold", name: "黑曜遮光絲絨眼罩", category: "一般", price: 90, rankReq: 1,
     desc: "內裡墊著黑曜般柔軟的絲絨，一旦覆上雙目，世界便只剩黑暗。失去視覺的她，會對你的每一次觸碰異常敏感。",
     choiceHint: "覆上她的眼，讓黑暗把她的感知一寸寸放大",
-    effects: { affection: 5, obedience: 0, stress: 8, hunger: 0 }, styleTag: "gentle" },
+    effects: { affection: 5, stress: 8, charm: 2 }, styleTag: "gentle" },
 
   { id: "silver_bell_clips", name: "銀鈴微刺敏感夾", category: "一般", price: 130, rankReq: 1,
     desc: "一對墜著銀鈴的小夾，咬住最嬌嫩的那一點。她每動一下，鈴聲與細密的刺痛便一齊響起，提醒她該有多乖。",
     choiceHint: "把銀鈴小夾咬上那兩點，聽她的呼吸碎成鈴音",
-    effects: { affection: -1, obedience: 10, stress: 10, hunger: 0 }, styleTag: "dominant" },
+    effects: { affection: -1, obedience: 10, stress: 10, charm: 2 }, styleTag: "dominant" },
 
   /* ============ 街區專屬 ============ */
   { id: "oldtown_incense", name: "舊城迷香", category: "街區", price: 150, rankReq: 2,
     desc: "舊城暗巷才買得到的密製香粉，據說能讓最冷淡的血脈都泛起薄紅。",
     choiceHint: "點上舊城迷香，看她的耳尖泛起薄紅",
-    effects: { affection: 4, obedience: 4, stress: 4, hunger: 6 }, styleTag: "lust" },
+    effects: { affection: 4, obedience: 4, stress: 4, hunger: 6, charm: 4 }, styleTag: "lust" },
 
   { id: "tower_page", name: "高塔禁書殘頁", category: "街區", price: 200, rankReq: 3,
     desc: "自高塔書閣撕下的一頁，上頭記載著讓魅魔主動索求的古老儀式。",
     choiceHint: "照著殘頁上的儀式，低聲念出那句古老的咒",
-    effects: { affection: -1, obedience: 10, stress: 6, hunger: 8 }, styleTag: "profit" },
+    effects: { affection: -1, obedience: 10, stress: 6, hunger: 8, charm: 2 }, styleTag: "profit" },
 
   /* ============ 黑市秘藥 ============ */
   { id: "charm_essence", name: "魅惑濃縮原液", category: "秘藥", price: 250, rankReq: 2,
     desc: "黑市裡流傳的濃縮秘藥，一滴便能讓最矜持的血脈泛起薄紅。她會主動朝你挨近，眼裡漾起化不開的情潮。",
     choiceHint: "在她唇間點一滴原液，看她主動湊近",
-    effects: { affection: 12, obedience: -2, stress: -6, hunger: 10 }, styleTag: "lust" },
+    effects: { affection: 12, obedience: -2, stress: -6, hunger: 10, charm: 12 }, styleTag: "lust" },
 
   { id: "abyss_spirit", name: "深淵精氣玉液", category: "秘藥", price: 500, rankReq: 4,
     desc: "自深淵熬煉的秘液，能令魅魔的氣血大盛，卻也勾得她飢渴難耐。以主控體液為餌時，這是最鋒利的一味藥。",
     choiceHint: "餵她飲下，看她眼底的飢渴燒起來",
-    effects: { affection: 6, obedience: 5, stress: 5, hunger: 25 }, styleTag: "profit" },
+    effects: { affection: 6, obedience: 5, stress: 5, hunger: 25, charm: 6, stamina: 8 }, styleTag: "profit" },
 
   /* ============ 高階禁忌【緋夜禁典·極刑】 ============ */
   { id: "codex1", name: "【緋夜禁典·極刑】壹·荊棘之吻", category: "高階", price: 600, rankReq: 4,
     desc: "柔韌的荊棘藤蔓，貼膚便會綻出細小的刺。每一次收緊，都是一記綿長的吻，痛與快意同時滲進她的每一寸知覺。",
     choiceHint: "讓荊棘之吻攀上她的手腕，一點一點收緊",
-    effects: { affection: 2, obedience: 25, stress: 18, hunger: 10 }, styleTag: "dominant" },
+    effects: { affection: 2, obedience: 25, stress: 18, hunger: 10, stamina: 4 }, styleTag: "dominant" },
 
   { id: "codex2", name: "【緋夜禁典·極刑】貳·極晝之牢", category: "高階", price: 800, rankReq: 4,
     desc: "以純白光線織成的牢籠，剝奪她所有陰影。在那無處躲藏的光裡，她只能坦露一切，任你審視、任你處置。",
     choiceHint: "將她關進極晝之牢，剝去她所有陰影",
-    effects: { affection: 0, obedience: 30, stress: 22, hunger: 6 }, styleTag: "profit" },
+    effects: { obedience: 30, stress: 22, hunger: 6, stamina: 5 }, styleTag: "profit" },
 
   { id: "codex3", name: "【緋夜禁典·極刑】參·深淵之舌", category: "高階", price: 1000, rankReq: 5,
     desc: "由深淵觸鬚淬煉而成的活物，會循著她的體溫攀附、舔舐、鑽探，直到她連求饒都碎成斷續的氣音。",
     choiceHint: "放出深淵之舌，任它循著她的體溫攀附",
-    effects: { affection: 4, obedience: 22, stress: 26, hunger: 14 }, styleTag: "lust" },
+    effects: { affection: 4, obedience: 22, stress: 26, hunger: 14, charm: 6 }, styleTag: "lust" },
 
   /* ============ 黑市 禁忌款 ============ */
   { id: "bm_spiked_rod", name: "【黑市·禁忌】異形棘刺巨型玉棒", category: "高階", price: 450, rankReq: 2,
     desc: "黑市深處才有的異形重器，通體佈滿柔韌的棘刺，規格遠超尋常。強行撐開的瞬間，痛楚與滅頂的快意會同時淹沒她。",
     choiceHint: "取出那件棘刺重器，在她耳畔問她準備好了沒",
-    effects: { affection: 15, obedience: 25, stress: 25, hunger: 10 }, styleTag: "dominant" },
+    effects: { affection: 15, obedience: 25, stress: 25, hunger: 10, charm: 8 }, styleTag: "dominant" },
 
   { id: "bm_blood_clips", name: "【黑市·禁忌】血誓螺旋絞骨合金夾", category: "高階", price: 520, rankReq: 2,
     desc: "配著調節螺絲與細密咬齒的金屬夾，旋緊時如細針穿心，將最敏感的一點絞至充血。痛得發抖，卻也羞得發燙。",
     choiceHint: "將合金夾絞上，聽她倒抽一口氣",
-    effects: { affection: 0, obedience: 30, stress: 25, hunger: 0 }, styleTag: "dominant" },
+    effects: { obedience: 30, stress: 25, stamina: 3 }, styleTag: "dominant" },
 
   { id: "bm_tri_shackle", name: "【黑市·禁忌】深淵拘魂重鎖三叉枷", category: "高階", price: 700, rankReq: 3,
     desc: "沉重冰冷的合金重枷，三叉交鎖，迫使她維持最羞恥的跪姿。稍有掙扎，枷鏈便會勒得更緊，教她學會靜止。",
     choiceHint: "將重枷扣上，看她顫抖著維持那羞恥的姿態",
-    effects: { affection: 0, obedience: 40, stress: 35, hunger: 0 }, masterHp: -8, styleTag: "dominant" },
+    effects: { obedience: 40, stress: 35, stamina: 5 }, masterHp: -8, styleTag: "dominant" },
 
   { id: "bm_iron_mask", name: "【黑市·禁忌】全覆式剝奪拘靈鐵面", category: "高階", price: 750, rankReq: 3,
     desc: "厚重冰冷的全覆面罩，封死視覺、聽覺與聲音。她被投入無邊的黑暗與孤獨，在恐慌裡，最終只能放棄抵抗。",
     choiceHint: "為她扣上鐵面，讓黑暗吞沒她所有知覺",
-    effects: { affection: -5, obedience: 45, stress: 35, hunger: 0 }, styleTag: "dominant" },
+    effects: { affection: -5, obedience: 45, stress: 35, stamina: 4 }, styleTag: "dominant" },
 
   { id: "bm_twin_serpent", name: "【黑市·禁忌】雙首蛇噬律動儀", category: "高階", price: 950, rankReq: 4,
     desc: "形如雙首魔蛇的活物儀器，同時探入兩處深處，隨體溫膨脹、震顫。在難以忍受的脹痛與侵略中，她的意志會一寸寸崩解。",
     choiceHint: "放出那雙首的律動儀，任它同時深入",
-    effects: { affection: 25, obedience: 50, stress: 40, hunger: 12 }, styleTag: "lust" }
+    effects: { affection: 25, obedience: 50, stress: 40, hunger: 12, charm: 12, stamina: 6 }, styleTag: "lust" }
 ];
+
+/* ---------- 項圈（裝備） ----------
+   每隻魅魔可配 1 項圈 + 1 牽引繩。配戴中每日結算獲得 wear 被動。 ---------- */
+const COLLARS = [
+  { id: "col_leather", name: "素面皮革項圈", material: "皮革", look: "素圈", weight: "輕", price: 120, rankReq: 1, source: "official",
+    desc: "柔軟的皮質貼著她的頸側，內側能烙上你的名字。戴上後，每次吞嚥都是提醒。",
+    wear: { obedience: 1, charm: 1 } },
+  { id: "col_silk", name: "緞面絲綢項圈", material: "絲綢", look: "緞帶結", weight: "極輕", price: 200, rankReq: 2, source: "official",
+    desc: "緞面泛著月華般的光，繫上後像一枚矜貴的飾物——只有你曉得它的用途。",
+    wear: { charm: 2, stress: -1 } },
+  { id: "col_silver", name: "雕花銀質項圈", material: "純銀", look: "藤紋雕花", weight: "中", price: 380, rankReq: 3, source: "official",
+    desc: "冰涼的銀圈綴著藤紋，扣上時那一聲輕響，能讓再倔的頸子也低下頭。",
+    wear: { obedience: 3, charm: 1, stress: 1 } },
+  { id: "col_gold", name: "鎏金鎖心項圈", material: "鎏金", look: "鎖心墜飾", weight: "重", price: 650, rankReq: 4, source: "official",
+    desc: "沉甸甸的鎏金圈扣著一枚鎖心，行走間叮噹作響，誰都知道她已有主。",
+    wear: { obedience: 4, charm: 3, stress: 2 } },
+  { id: "col_thorn", name: "【禁忌】棘環項圈", material: "黑鐵棘刺", look: "內襯棘齒", weight: "重", price: 700, rankReq: 3, source: "blackmarket", forbidden: true,
+    desc: "內襯一圈細密棘齒，她每低頭順從一次，棘刺便輕咬她一分。服從，是疼出來的。",
+    wear: { obedience: 6, stamina: 1, stress: 4 } },
+  { id: "col_soul", name: "【禁忌】噬魂銘環", material: "深淵合金", look: "流動符文環", weight: "極重", price: 1100, rankReq: 4, source: "blackmarket", forbidden: true,
+    desc: "深淵合金的環身浮著流動符文，一旦扣上便與她的魂魄共鳴，令她再無反抗的念頭。",
+    wear: { obedience: 8, charm: 4, stamina: 2, stress: 6 } }
+];
+
+/* ---------- 牽引繩（裝備） ---------- */
+const LEASHES = [
+  { id: "lea_rope", name: "麻繩牽引索", material: "麻繩", look: "素繩", weight: "輕", price: 80, rankReq: 1, source: "official",
+    desc: "粗糙的麻繩，握在掌心微微扎人。牽著她走過暗巷，誰都看得懂那層意思。",
+    wear: { obedience: 1 } },
+  { id: "lea_leather", name: "熟銅環皮牽繩", material: "皮革", look: "銅環扣", weight: "中", price: 180, rankReq: 2, source: "official",
+    desc: "結實的皮索配一枚熟銅扣，拉動時她會順著力道靠近你半步。",
+    wear: { obedience: 2, charm: 1 } },
+  { id: "lea_chain", name: "銀鏈牽引索", material: "純銀", look: "細鏈", weight: "中", price: 340, rankReq: 3, source: "official",
+    desc: "銀鏈在燈下泛著冷光，晃動的聲響提醒著她的歸屬。",
+    wear: { obedience: 3, charm: 2 } },
+  { id: "lea_velvet", name: "黑絲絨牽繩", material: "絲絨", look: "流蘇穗", weight: "輕", price: 420, rankReq: 3, source: "official",
+    desc: "柔軟的黑絲絨繩，尾端綴著流蘇。牽在手中，倒像是牽著一件矜貴的藏品。",
+    wear: { charm: 3, stress: -1 } },
+  { id: "lea_barb", name: "【禁忌】倒刺鎖魂索", material: "黑鐵倒刺", look: "倒刺鏈", weight: "重", price: 640, rankReq: 3, source: "blackmarket", forbidden: true,
+    desc: "鏈節內側生著細小倒刺，她只要想離你遠一點，就會被輕輕拽回。牽引成了一種馴服。",
+    wear: { obedience: 5, stress: 3 } },
+  { id: "lea_abyss", name: "【禁忌】深淵紫電鎖鏈", material: "深淵紫晶", look: "電弧鏈", weight: "極重", price: 950, rankReq: 4, source: "blackmarket", forbidden: true,
+    desc: "紫晶鏈身不時竄過一線電弧，拉緊時會沿著鏈條傳到她頸側。她會記得，是誰握著另一端。",
+    wear: { obedience: 7, stamina: 2, stress: 5 } }
+];
+
+const COLLAR_INFO = {
+  official:    { name: "官方項圈行",   desc: "高塔區的皮匠與銀匠合開的鋪子，項圈與牽繩皆可量頸訂製。", riskLabel: "正規" },
+  blackmarket: { name: "暗巷禁具鋪",   desc: "燈紅暗巷最深處，只賣見不得光的牽引禁具。",             riskLabel: "違禁" }
+};
 
 /* ---------- 街區與房產 ---------- */
 const DISTRICTS = [
@@ -336,11 +407,10 @@ const WEIRD_BUYERS = [
   }
 ];
 
-/* ---------- 拍賣會 ---------- */
+/* ---------- 拍賣會（僅限 A / S 級） ---------- */
 const AUCTION_INFO = {
   commission: 0.15,
-  minObedience: 75,
-  minAffection: 55,
+  minGrade: ["A", "S"],
   desc: "燈紅暗巷頂樓的競價。只有最上等的貨色，才配站上這片燈海中央。"
 };
 
@@ -349,7 +419,7 @@ const CONTRACT_INFO = {
   permanentAffectionReq: 70,
   permanentCost: 500,
   permanentDesc: "以血與吻烙下的永久之契。她從此不再是可以易手的貨物，而是你緋夜的一部分。",
-  bonusesDesc: "每日好感自然增長、壓力緩解；調教效率提升；並開啟只屬於她的專屬劇情。"
+  bonusesDesc: "每日好感自然增長、壓力緩解；配戴加成提升；並開啟只屬於她的專屬劇情。"
 };
 
 /* ---------- 開場文案 ---------- */

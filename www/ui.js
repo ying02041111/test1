@@ -10,6 +10,15 @@ function escapeHtml(s) {
 
 function signed(n) { return n > 0 ? "+" + n : "" + n; }
 
+function effText(eff) {
+  if (!eff) return "";
+  const parts = [];
+  const add = (label, k) => { if (eff[k]) parts.push(`${label}${signed(eff[k])}`); };
+  add("好感", "affection"); add("服從", "obedience"); add("魅惑", "charm");
+  add("體能", "stamina"); add("壓力", "stress"); add("飢餓", "hunger");
+  return parts.join("　");
+}
+
 function openModal(id) { const m = document.getElementById(id); if (m) m.classList.add("open"); }
 function closeModal(id) { const m = document.getElementById(id); if (m) m.classList.remove("open"); }
 function closeAllModals() { document.querySelectorAll(".modal-overlay.open").forEach(m => m.classList.remove("open")); }
@@ -103,11 +112,35 @@ function renderMaster() {
 }
 
 /* ---------- 魅魔 ---------- */
-function statItem(label, val, cls) {
+function statItem(label, val, cls, max, color) {
+  const mx = max || 100;
+  const pct = Math.max(0, Math.min(100, ((val || 0) / mx) * 100));
+  const colorStyle = color ? `background:${color};` : "";
   return `<div class="stat-item">
-    <div class="stat-label"><span>${label}</span><b>${val}</b></div>
-    <div class="bar-track ${cls}"><div class="bar-fill" style="width:${val}%"></div></div>
+    <div class="stat-label"><span>${label}</span><b>${val || 0}</b></div>
+    <div class="bar-track ${cls}"><div class="bar-fill" style="width:${pct}%;${colorStyle}"></div></div>
   </div>`;
+}
+
+function gradeBadge(g) {
+  return `<span style="display:inline-block;padding:1px 7px;border-radius:8px;font-size:11px;font-weight:700;background:#775C56;color:#F8F4E8">${g.grade}級·${g.name}</span>`;
+}
+
+function succubusStatsHtml(s) {
+  return `<div class="stat-grid">
+    ${statItem("好感", s.affection, "bar-affection", 300)}
+    ${statItem("服從", s.obedience, "bar-obedience", 300)}
+    ${statItem("魅惑", s.charm, "bar-charm", 300, "#E39BB6")}
+    ${statItem("體能", s.stamina, "bar-stamina", 300, "#8FC7B8")}
+    ${statItem("壓力", s.stress, "bar-stress", 100)}
+    ${statItem("飢餓", s.hunger, "bar-hunger", 100)}
+  </div>`;
+}
+
+function gearStatusTag(s) {
+  if (isLeashReady(s)) return '<span class="tag tag-safe">已繫妥可牽引</span>';
+  if (s.collar || s.leash) return '<span class="tag tag-muted">配件未成套</span>';
+  return "";
 }
 
 function renderSuccubi() {
@@ -118,22 +151,18 @@ function renderSuccubi() {
   }
   box.innerHTML = S.succubi.map(s => {
     const perm = s.contract === "permanent";
+    const g = succubusGrade(s);
     const defTag = s.defect ? `<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>` : "";
     const presTag = s.present ? '<span class="tag tag-safe">在身邊</span>' : `<span class="tag tag-muted">不在${s.place ? "・" + escapeHtml(s.place) : ""}</span>`;
     return `<div class="succubus-card" onclick="openSuccubusDetail('${s.id}')">
       <div class="succubus-top">
         <div class="avatar">${escapeHtml(s.name.charAt(0))}</div>
         <div>
-          <div class="succubus-name">${escapeHtml(s.name)} ${perm ? '<span class="tag tag-safe">永久契約</span>' : '<span class="tag tag-muted">暫時契約</span>'} ${presTag}</div>
-          <div class="succubus-sub">${escapeHtml(s.raceName)} · ${escapeHtml(s.personalityName)} ${defTag}</div>
+          <div class="succubus-name">${escapeHtml(s.name)} ${gradeBadge(g)} ${perm ? '<span class="tag tag-safe">永久契約</span>' : '<span class="tag tag-muted">暫時契約</span>'} ${presTag}</div>
+          <div class="succubus-sub">${escapeHtml(s.raceName)} · ${escapeHtml(s.personalityName)} ${defTag} ${gearStatusTag(s)}</div>
         </div>
       </div>
-      <div class="stat-grid">
-        ${statItem("好感", s.affection, "bar-affection")}
-        ${statItem("服從", s.obedience, "bar-obedience")}
-        ${statItem("壓力", s.stress, "bar-stress")}
-        ${statItem("飢餓", s.hunger, "bar-hunger")}
-      </div>
+      ${succubusStatsHtml(s)}
       <div class="succubus-actions">
         ${perm ? "" : `<button class="btn" onclick="event.stopPropagation(); openSellFlow('${s.id}')">契約轉讓</button>`}
         ${perm ? "" : `<button class="btn" onclick="event.stopPropagation(); openContractFlow('${s.id}')">簽訂永久契約</button>`}
@@ -142,52 +171,91 @@ function renderSuccubi() {
   }).join("");
 }
 
+function gearPickerRow(suc, kind, label) {
+  const curId = suc[kind];
+  const cur = curId ? getGearDef(curId) : null;
+  const owned = Object.keys(S.gear || {}).filter(id => S.gear[id] > 0 && gearKind(id) === kind);
+  const opts = owned.map(id => {
+    const g = getGearDef(id);
+    return `<button class="btn" style="margin:2px" onclick="doEquipGear('${suc.id}','${id}')">${escapeHtml(g.name)}（${g.material}·${g.look}·${g.weight}）</button>`;
+  }).join("");
+  const curText = cur ? `${escapeHtml(cur.name)}（${cur.material}·${cur.look}·${cur.weight}）` : "未配戴";
+  const unBtn = cur ? `<button class="btn" style="margin:2px" onclick="doUnequipGear('${suc.id}','${kind}')">卸下</button>` : "";
+  return `<div class="row"><b>${label}</b>　${curText} ${unBtn}
+    <div style="margin-top:6px">${opts || '<span style="font-size:12.5px;color:var(--ink-soft)">（背包內無其他' + label + '）</span>'}</div>
+  </div>`;
+}
+
 function openSuccubusDetail(id) {
   const s = getSuccubus(id);
   if (!s) return;
   document.getElementById("succubus-title").textContent = s.name;
   const perm = s.contract === "permanent";
+  const g = succubusGrade(s);
+  const score = succubusGradeScore(s);
   const riskTag = s.risk ? `<span class="tag ${s.risk === "低風險" ? "tag-safe" : "tag-risk"}">${s.risk}</span>` : "";
   const presTag = s.present ? '<span class="tag tag-safe">在身邊</span>' : `<span class="tag tag-muted">不在${s.place ? "・" + escapeHtml(s.place) : ""}</span>`;
   document.getElementById("succubus-body").innerHTML = `
     <div class="candidate-detail">
-      <div class="row"><b>${escapeHtml(s.name)}</b>　<span class="tag ${perm ? "tag-safe" : "tag-muted"}">${perm ? "永久契約" : "暫時契約"}</span> ${presTag} ${riskTag}</div>
+      <div class="row"><b>${escapeHtml(s.name)}</b>　${gradeBadge(g)}　<span class="tag ${perm ? "tag-safe" : "tag-muted"}">${perm ? "永久契約" : "暫時契約"}</span> ${presTag} ${riskTag}</div>
+      <div class="row"><b>等級</b>　${g.grade} 級 · ${g.name}（綜合 ${score}）　${escapeHtml(g.desc)}</div>
       <div class="row"><b>種族</b>　${escapeHtml(s.raceName)}　${escapeHtml(s.raceDesc || "")}</div>
       <div class="row"><b>個性</b>　${escapeHtml(s.personalityName)}　${escapeHtml(s.personalityDesc || "")}</div>
+      <div class="row"><b>說話風格</b>　${escapeHtml(s.speechStyle || "")}</div>
       <div class="row"><b>外貌</b>　${escapeHtml(s.appearance || "")}</div>
       <div class="row"><b>氣味</b>　${escapeHtml(s.scent || "")}</div>
       ${s.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>　${escapeHtml(s.defect.desc || "")}</div>` : ""}
       ${s.background ? `<div class="row"><b>來歷</b>　${escapeHtml(s.background)}</div>` : ""}
-      <div class="stat-grid">
-        ${statItem("好感", s.affection, "bar-affection")}
-        ${statItem("服從", s.obedience, "bar-obedience")}
-        ${statItem("壓力", s.stress, "bar-stress")}
-        ${statItem("飢餓", s.hunger, "bar-hunger")}
-      </div>
+      ${succubusStatsHtml(s)}
+      <div class="row" style="margin-top:6px"><b>配件</b>　${gearStatusTag(s)}</div>
+      ${gearPickerRow(s, "collar", "項圈")}
+      ${gearPickerRow(s, "leash", "牽引繩")}
     </div>`;
   openModal("modal-succubus");
+}
+
+function doEquipGear(sucId, gearId) {
+  if (equipGear(sucId, gearId)) { saveGame(); openSuccubusDetail(sucId); renderAll(); showToast("已配戴。"); }
+  else showToast("配戴失敗。");
+}
+function doUnequipGear(sucId, kind) {
+  if (unequipGear(sucId, kind)) { saveGame(); openSuccubusDetail(sucId); renderAll(); showToast("已卸下。"); }
 }
 
 /* ---------- 背包 ---------- */
 function renderInventory() {
   const box = document.getElementById("inventory-list");
-  if (!S.inventory.length) {
-    box.innerHTML = `<div class="card"><p style="color:var(--ink-soft);font-size:13.5px">背包空空如也。緋夜的道具，可到道具商店裡尋。</p></div>`;
-    return;
-  }
   const counts = {};
   S.inventory.forEach(id => counts[id] = (counts[id] || 0) + 1);
-  box.innerHTML = Object.keys(counts).map(id => {
+  const itemHtml = Object.keys(counts).map(id => {
     const it = getItem(id);
     if (!it) return "";
     const isCodex = it.category === "高階";
-    const eff = `好感${signed(it.effects.affection)}　服從${signed(it.effects.obedience)}　壓力${signed(it.effects.stress)}　飢餓${signed(it.effects.hunger)}`;
     return `<div class="item-card ${isCodex ? "codex" : ""}">
       <div class="item-head"><span class="item-name">${escapeHtml(it.name)} ×${counts[id]}</span><span class="tag ${isCodex ? "tag-risk" : "tag-muted"}">${escapeHtml(it.category)}</span></div>
       <div class="item-desc">${escapeHtml(it.desc)}</div>
-      <div class="item-effects">${eff}</div>
+      <div class="item-effects">${effText(it.effects)}${it.satiates ? "　（飽足）" : ""}</div>
     </div>`;
   }).join("");
+
+  const gear = S.gear || {};
+  const gearIds = Object.keys(gear).filter(id => gear[id] > 0);
+  const gearHtml = gearIds.map(id => {
+    const g = getGearDef(id);
+    if (!g) return "";
+    const kind = gearKind(id) === "collar" ? "項圈" : "牽引繩";
+    return `<div class="item-card">
+      <div class="item-head"><span class="item-name">${escapeHtml(g.name)} ×${gear[id]}</span><span class="tag tag-muted">${kind}</span></div>
+      <div class="item-desc">材質 ${escapeHtml(g.material)}　外型 ${escapeHtml(g.look)}　重量 ${escapeHtml(g.weight)}${g.forbidden ? "　<span class='tag tag-risk'>禁忌</span>" : ""}</div>
+      <div class="item-effects">每日配戴：${effText(g.wear)}</div>
+    </div>`;
+  }).join("");
+
+  if (!itemHtml && !gearHtml) {
+    box.innerHTML = `<div class="card"><p style="color:var(--ink-soft);font-size:13.5px">背包空空如也。緋夜的道具與配件，可到商店裡尋。</p></div>`;
+    return;
+  }
+  box.innerHTML = itemHtml + (gearHtml ? `<div class="panel-head" style="margin-top:8px"><b>配件</b></div>${gearHtml}` : "");
 }
 
 /* ---------- 房產 ---------- */
@@ -242,26 +310,32 @@ function renderMarket() {
   document.getElementById("market-title").textContent = info.name;
   document.getElementById("market-body").innerHTML = `
     <div class="market-intro">${escapeHtml(info.desc)}　<span class="tag ${info.type === "official" ? "tag-safe" : "tag-risk"}">${info.riskLabel}</span></div>
-    ${S.market.candidates.map(c => `
+    ${S.market.candidates.map(c => {
+      const g = candidateGrade(c);
+      return `
       <div class="market-card ${info.type}" onclick="inspectCandidate('${c.id}')">
-        <div class="top"><span class="name">${escapeHtml(c.name)}</span><span class="price">${c.price} 金</span></div>
+        <div class="top"><span class="name">${escapeHtml(c.name)}　${gradeBadge(g)}</span><span class="price">${c.price} 金</span></div>
         <div class="meta">${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)} · <span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
         <div class="background">${escapeHtml(c.background)}</div>
-      </div>`).join("")}`;
+      </div>`;
+    }).join("")}`;
   openModal("modal-market");
 }
 
 function renderCandidateDetail(c) {
   const body = document.getElementById("market-body");
+  const g = candidateGrade(c);
+  const seed = c.statSeed || {};
   body.innerHTML = `
     <div class="candidate-detail">
-      <div class="row"><b>${escapeHtml(c.name)}</b>　<span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
+      <div class="row"><b>${escapeHtml(c.name)}</b>　${gradeBadge(g)}　<span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
       <div class="row"><b>外貌</b>　${escapeHtml(c.appearance)}</div>
       <div class="row"><b>氣味</b>　${escapeHtml(c.scent)}</div>
       <div class="row"><b>種族</b>　${escapeHtml(c.raceName)}　${escapeHtml(c.raceDesc)}</div>
       <div class="row"><b>個性</b>　${escapeHtml(c.personalityName)}　${escapeHtml(c.personalityDesc)}</div>
       ${c.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(c.defect.name)}</span>　${escapeHtml(c.defect.desc)}</div>` : ""}
       <div class="row"><b>來歷</b>　${escapeHtml(c.background)}</div>
+      <div class="row"><b>潛質</b>　好感${seed.affection || 0}　服從${seed.obedience || 0}　魅惑${seed.charm || 0}　體能${seed.stamina || 0}　壓力${seed.stress || 0}　飢餓${seed.hunger || 0}</div>
       <div class="row"><b>價格</b>　${c.price} 金</div>
       <button class="btn btn-accent" onclick="showConfirm('${c.id}')">決定購買</button>
       <button class="btn" onclick="renderMarket()">返回清單</button>
@@ -311,13 +385,12 @@ function renderShop(type) {
     const locked = S.master.rank < it.rankReq;
     const poor = S.master.gold < it.price;
     const owned = hasItem(it.id) ? ' <span class="tag tag-safe">已持有</span>' : "";
-    const eff = `好感${signed(it.effects.affection)} 服從${signed(it.effects.obedience)} 壓力${signed(it.effects.stress)} 飢餓${signed(it.effects.hunger)}`;
     const btnLabel = locked ? "階級不足" : (poor ? "金幣不足" : "購買");
     return `<div class="market-card ${type === "blackmarket" ? "blackmarket" : "official"}">
       <div class="top"><span class="name">${escapeHtml(it.name)}${owned}</span><span class="price">${it.price} 金</span></div>
       <div class="meta"><span class="tag ${type === "blackmarket" ? "tag-risk" : "tag-muted"}">${escapeHtml(it.category)}</span> · ${rankText}${locked ? ' <span class="tag tag-risk">階級不足</span>' : ""}</div>
       <div class="background">${escapeHtml(it.desc)}</div>
-      <div class="meta">${eff}</div>
+      <div class="meta">${effText(it.effects)}${it.satiates ? "　（飽足）" : ""}</div>
       <button class="btn ${(locked || poor) ? "" : "btn-accent"}" onclick="handleBuyItem('${it.id}')" ${(locked || poor) ? "disabled" : ""}>${btnLabel}</button>
     </div>`;
   }).join("");
@@ -338,17 +411,75 @@ function handleBuyItem(itemId) {
   }
 }
 
+/* ---------- 項圈／牽引繩商店 ---------- */
+let currentCollarShopType = "official";
+
+function openCollarShopChoice() {
+  document.getElementById("collar-title").textContent = "項圈商店";
+  document.getElementById("collar-body").innerHTML = `
+    <div class="market-intro">牽引她，需要一副合適的項圈與牽繩。</div>
+    <button class="btn" onclick="openCollarShop('official')">官方項圈行 <span class="tag tag-safe">正規 · 皮匠與銀匠</span></button>
+    <button class="btn" onclick="openCollarShop('blackmarket')">暗巷禁具鋪 <span class="tag tag-risk">違禁 · 禁忌款</span></button>
+    <p style="font-size:12.5px;color:var(--ink-soft)">購買後，請到「魅魔 → 點擊角色 → 配件」為她配戴。一隻魅魔需 1 個項圈 + 1 條牽引繩才能成套牽引，多隻魅魔請多備幾套。</p>`;
+  openModal("modal-collar");
+}
+
+function openCollarShop(type) {
+  currentCollarShopType = type;
+  const info = COLLAR_INFO[type];
+  if (!info) return;
+  document.getElementById("collar-title").textContent = info.name;
+  renderCollarShop(type);
+  openModal("modal-collar");
+}
+
+function renderCollarShop(type) {
+  const info = COLLAR_INFO[type];
+  const list = collarShopItems(type);
+  const body = document.getElementById("collar-body");
+  const cards = list.map(g => {
+    const kind = gearKind(g.id) === "collar" ? "項圈" : "牽引繩";
+    const rank = getRank(g.rankReq || 1);
+    const rankText = (g.rankReq || 1) <= 1 ? "入門" : `解鎖 ${rank.name}`;
+    const locked = S.master.rank < (g.rankReq || 1);
+    const poor = S.master.gold < g.price;
+    const btnLabel = locked ? "階級不足" : (poor ? "金幣不足" : "購買");
+    return `<div class="market-card ${type === "blackmarket" ? "blackmarket" : "official"}">
+      <div class="top"><span class="name">${escapeHtml(g.name)}${g.forbidden ? ' <span class="tag tag-risk">禁忌</span>' : ""}</span><span class="price">${g.price} 金</span></div>
+      <div class="meta"><span class="tag tag-muted">${kind}</span> · 材質 ${escapeHtml(g.material)} · 外型 ${escapeHtml(g.look)} · 重量 ${escapeHtml(g.weight)} · ${rankText}</div>
+      <div class="background">${escapeHtml(g.desc)}</div>
+      <div class="meta">每日配戴：${effText(g.wear)}</div>
+      <button class="btn ${(locked || poor) ? "" : "btn-accent"}" onclick="handleBuyGear('${g.id}')" ${(locked || poor) ? "disabled" : ""}>${btnLabel}</button>
+    </div>`;
+  }).join("");
+  body.innerHTML = `
+    <div class="market-intro">${escapeHtml(info.desc)}　<span class="tag ${type === "blackmarket" ? "tag-risk" : "tag-safe"}">${info.riskLabel}</span></div>
+    <button class="btn" onclick="openCollarShopChoice()">返回選擇</button>
+    ${cards}`;
+}
+
+function handleBuyGear(gearId) {
+  if (buyGear(gearId)) {
+    renderCollarShop(currentCollarShopType);
+    renderInventory();
+    renderStatusBar();
+    showToast(`已購入「${getGearDef(gearId).name}」。`);
+    if (typeof saveGame === "function") saveGame();
+  }
+}
+
 /* ---------- 出售 ---------- */
 function openSellFlow(succubusId) {
   const suc = getSuccubus(succubusId);
   if (!suc) return;
   if (suc.contract === "permanent") { showToast("她已締下永久之契，不能再轉讓。"); return; }
-  document.getElementById("sell-title").textContent = "契約轉讓 · " + suc.name;
+  const g = succubusGrade(suc);
+  document.getElementById("sell-title").textContent = "契約轉讓 · " + suc.name + "（" + g.grade + "級）";
   document.getElementById("sell-body").innerHTML = `
     <div class="market-intro">你想將 ${escapeHtml(suc.name)} 轉往何處？</div>
     <button class="btn" onclick="prepareSellAndRender('${succubusId}','official')">官方契約廳 <span class="tag tag-safe">低風險 · 收價低</span></button>
     <button class="btn" onclick="prepareSellAndRender('${succubusId}','blackmarket')">暗巷黑市 <span class="tag tag-risk">高風險 · 收價高</span></button>
-    <button class="btn" onclick="prepareSellAndRender('${succubusId}','auction')">拍賣會 <span class="tag tag-safe">最高價 · 限高等級</span></button>`;
+    <button class="btn" onclick="prepareSellAndRender('${succubusId}','auction')">拍賣會 <span class="tag tag-safe">最高價 · 限 A／S 級</span></button>`;
   openModal("modal-sell");
 }
 

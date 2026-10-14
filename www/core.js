@@ -16,10 +16,12 @@ function defaultState() {
     ownedHouses: ["oldtown_loft"],
     succubi: [],
     inventory: [],
+    gear: {},
     currentChoices: [],
     logs: [],
     summary: "",
     facts: [],
+    history: [],
     market: { type: null, candidates: [], selectedId: null, cache: {} },
     sellState: null,
     hasPurchased: false,
@@ -33,6 +35,12 @@ function ensureState() { if (!S) S = defaultState(); }
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function statCap(key) {
+  const caps = (typeof STAT_CAPS !== "undefined") ? STAT_CAPS : null;
+  return (caps && caps[key] != null) ? caps[key] : 100;
+}
+function clampStatObj(suc, key, val) { return clamp(val, 0, statCap(key)); }
 
 function randomName() { return pick(SUCCUBUS_NAMES); }
 function getRank(r) { return MASTER_RANKS.find(x => x.rank === r) || MASTER_RANKS[0]; }
@@ -54,6 +62,34 @@ function currentSuccubus() { return S.succubi.length ? S.succubi[0] : null; }
 function isHighDistrict(id) { const d = getDistrict(id); return d ? !!d.isHigh : false; }
 function districtRankReq(id) { return DISTRICT_RANK[id] || 1; }
 
+/* ---------- 配件（項圈／牽引繩） ---------- */
+function getGearDef(id) {
+  if (!id) return null;
+  return COLLARS.find(g => g.id === id) || LEASHES.find(g => g.id === id) || null;
+}
+function gearKind(id) {
+  if (COLLARS.some(g => g.id === id)) return "collar";
+  if (LEASHES.some(g => g.id === id)) return "leash";
+  return "";
+}
+function gearOwnedCount(id) { return (S.gear && S.gear[id]) ? S.gear[id] : 0; }
+
+/* ---------- 等級 ---------- */
+function gradeFromScore(score) {
+  let g = SUCCUBUS_GRADES[0];
+  for (const t of SUCCUBUS_GRADES) if (score >= t.minScore) g = t;
+  return g;
+}
+function succubusGradeScore(suc) {
+  if (!suc) return 0;
+  return Math.round((((suc.charm || 0) + (suc.obedience || 0) + (suc.stamina || 0)) / 3));
+}
+function succubusGrade(suc) { return gradeFromScore(succubusGradeScore(suc)); }
+function candidateGrade(c) {
+  const seed = (c && c.statSeed) ? c.statSeed : {};
+  return gradeFromScore(Math.round((((seed.charm || 0) + (seed.obedience || 0) + (seed.stamina || 0)) / 3)));
+}
+
 function sceneHeader() {
   const d = getDistrict(S.currentDistrictId);
   const h = getHouse(S.currentHouseId);
@@ -62,18 +98,20 @@ function sceneHeader() {
 }
 
 function snapStats(suc) {
-  return { affection: suc.affection, obedience: suc.obedience, stress: suc.stress, hunger: suc.hunger };
+  return { affection: suc.affection, obedience: suc.obedience, charm: suc.charm || 0, stamina: suc.stamina || 0, stress: suc.stress, hunger: suc.hunger };
 }
 
 function notifyStatChange(suc, before) {
   if (!suc || !before) return;
   const parts = [];
   const add = (label, key) => {
-    const d = suc[key] - before[key];
+    const d = (suc[key] || 0) - (before[key] || 0);
     if (d !== 0) parts.push(`${label}${d > 0 ? "+" : ""}${d}`);
   };
   add("好感", "affection");
   add("服從", "obedience");
+  add("魅惑", "charm");
+  add("體能", "stamina");
   add("壓力", "stress");
   add("飢餓", "hunger");
   if (parts.length) pushLog("system", `［${suc.name}］${parts.join("　")}`);
@@ -112,11 +150,13 @@ function rollSuccubus(raceKey) {
     raceKey: race.key, raceName: race.name, raceDesc: race.desc,
     appearance: ap, scent: sc,
     personality: p.id, personalityName: p.name, personalityDesc: p.desc,
+    speechStyle: p.speech || "",
     defect: null,
-    affection: 5, obedience: 10, stress: 10, hunger: 25,
+    affection: 5, obedience: 10, charm: 5, stamina: 8, stress: 10, hunger: 25,
     origin: "roll", background: "", risk: null,
     contract: "temporary", storyUnlocked: false,
-    present: true, place: ""
+    present: true, place: "",
+    collar: "", leash: ""
   };
 }
 
@@ -134,20 +174,43 @@ function advanceTime(phases) {
 }
 
 function triggerDailySettlement() {
-  let hpCost = 0, goldCost = 0, permIncome = 0;
+  let permIncome = 0;
+  let hpCost = 0, goldCost = 0, starveCount = 0;
+
   for (const s of S.succubi) {
-    s.hunger = clamp(s.hunger + 15, 0, 100);
+    // 自然消退（有了下降機制，數值不再輕易滿頂）
+    s.affection = clampStatObj(s, "affection", (s.affection || 0) - 3);
+    s.obedience = clampStatObj(s, "obedience", (s.obedience || 0) - 2);
+    s.charm     = clampStatObj(s, "charm",     (s.charm || 0) - 2);
+    s.stamina   = clampStatObj(s, "stamina",   (s.stamina || 0) - 1);
     s.stress = clamp(s.stress + 4, 0, 100);
+
+    // 配戴被動加成
+    if (s.collar) { const c = getGearDef(s.collar); if (c && c.wear) applyWear(s, c.wear); }
+    if (s.leash)  { const l = getGearDef(s.leash);  if (l && l.wear) applyWear(s, l.wear); }
+
+    // 永久契約回饋
     if (s.contract === "permanent") {
-      s.affection = clamp(s.affection + 2, 0, 100);
+      s.affection = clampStatObj(s, "affection", (s.affection || 0) + 4);
       s.stress = clamp(s.stress - 2, 0, 100);
       permIncome += 15;
     }
-    if (s.raceKey === "pure") hpCost += 6; else goldCost += 20;
+
+    // 餵食：負擔得起→飽足歸零；否則挨餓
+    let fed = false;
+    if (s.raceKey === "pure") {
+      if (S.master.hp > 6) { S.master.hp = clamp(S.master.hp - 6, 0, S.master.maxHp); hpCost += 6; fed = true; }
+    } else {
+      if (S.master.gold >= 20) { S.master.gold -= 20; goldCost += 20; fed = true; }
+    }
+    if (fed) s.hunger = 0;
+    else { s.hunger = clamp(s.hunger + 15, 0, 100); starveCount++; }
   }
+
   let msg = "新的一日來臨。";
-  if (hpCost > 0) { S.master.hp = clamp(S.master.hp - hpCost, 0, S.master.maxHp); msg += ` 純血魅魔循著你的氣味索食，你的體力被分走了 ${hpCost}。`; }
-  if (goldCost > 0) { S.master.gold = Math.max(0, S.master.gold - goldCost); msg += ` 你為魅魔張羅吃食，花去 ${goldCost} 金。`; }
+  if (hpCost > 0) msg += ` 純血魅魔循著你的氣味索食，你的體力被分走了 ${hpCost}。`;
+  if (goldCost > 0) msg += ` 你為魅魔張羅吃食，花去 ${goldCost} 金。`;
+  if (starveCount > 0) msg += ` 有 ${starveCount} 隻魅魔沒能吃飽，正餓著。`;
   pushLog("system", msg);
 
   const income = 30 + S.master.rank * 15 + permIncome;
@@ -186,13 +249,16 @@ function generateOneCandidate(type, idx) {
     raceKey: race.key, raceName: race.name, raceDesc: race.desc,
     appearance: ap, scent: sc,
     personality: p.id, personalityName: p.name, personalityDesc: p.desc,
+    speechStyle: p.speech || "",
     defect: defect, background: background, price: price,
     risk: isOfficial ? "低風險" : "高風險",
     statSeed: {
-      affection: isOfficial ? randInt(10, 19) : randInt(2, 7),
-      obedience: isOfficial ? randInt(20, 34) : randInt(3, 10),
-      stress: isOfficial ? randInt(5, 12) : randInt(20, 39),
-      hunger: randInt(20, 39)
+      affection: isOfficial ? randInt(10, 29) : randInt(2, 9),
+      obedience: isOfficial ? randInt(20, 49) : randInt(3, 12),
+      charm:     isOfficial ? randInt(12, 34) : randInt(4, 14),
+      stamina:   isOfficial ? randInt(15, 39) : randInt(5, 16),
+      stress:    isOfficial ? randInt(5, 12) : randInt(20, 39),
+      hunger:    randInt(20, 39)
     }
   };
 }
@@ -200,7 +266,7 @@ function generateOneCandidate(type, idx) {
 function openMarket(type) {
   if (!MARKET_INFO[type]) return;
   if (type === "blackmarket" && !S.hasPurchased) {
-    pushLog("system", "你尚無名下魅魔，暗巷黑市還不對你敞開。先到官方契約廳，挑第一雙屬於你的眼睛吧。");
+    pushLog("system", "你尚無名下魅魔，暗巷黑市還不對你敞開。先到官方契約廳，挑一雙屬於你的眼睛吧。");
     if (typeof renderAll === "function") renderAll();
     return;
   }
@@ -252,12 +318,15 @@ function confirmPurchase() {
     raceKey: c.raceKey, raceName: c.raceName, raceDesc: c.raceDesc,
     appearance: c.appearance, scent: c.scent,
     personality: c.personality, personalityName: c.personalityName, personalityDesc: c.personalityDesc,
+    speechStyle: c.speechStyle || "",
     defect: c.defect, background: c.background, risk: c.risk,
     origin: c.risk === "低風險" ? "official" : "blackmarket",
     affection: c.statSeed.affection, obedience: c.statSeed.obedience,
+    charm: c.statSeed.charm || 0, stamina: c.statSeed.stamina || 0,
     stress: c.statSeed.stress, hunger: c.statSeed.hunger,
     contract: "temporary", storyUnlocked: false,
-    present: true, place: ""
+    present: true, place: "",
+    collar: "", leash: ""
   };
 
   S.succubi.push(suc);
@@ -283,10 +352,18 @@ function confirmPurchase() {
 
 /* ---------- 出售 ---------- */
 function computeQuality(suc) {
-  return Math.round(suc.affection * 2 + suc.obedience * 3 + (100 - suc.stress) * 1.5 - suc.hunger * 0.8);
+  return Math.round(
+    (suc.affection || 0) * 0.8 + (suc.obedience || 0) * 1.0 +
+    (suc.charm || 0) * 0.8 + (suc.stamina || 0) * 0.5 +
+    (100 - suc.stress) * 0.6 - (suc.hunger || 0) * 0.4
+  );
 }
 
-function officialPrice(suc) { return Math.max(80, 150 + Math.round(computeQuality(suc) * 1.2)); }
+function officialPrice(suc) {
+  const g = succubusGrade(suc);
+  const base = 120 + computeQuality(suc) * 0.6;
+  return Math.max(80, Math.round(base * g.priceMult));
+}
 function blackPrice(suc) { return Math.max(150, Math.round(officialPrice(suc) * (1.4 + Math.random() * 0.6))); }
 function auctionPrice(suc) { return Math.round(officialPrice(suc) * (1.8 + Math.random() * 1.2)); }
 
@@ -308,8 +385,10 @@ function prepareSell(succubusId, channel) {
     }
   } else if (channel === "auction") {
     if (!isHighDistrict(S.currentDistrictId)) { pushLog("system", "拍賣會只在高等街區舉辦，緋夜舊城沒有這等燈海。"); S.sellState = null; return null; }
-    if (!(suc.obedience >= AUCTION_INFO.minObedience && suc.affection >= AUCTION_INFO.minAffection)) {
-      pushLog("system", "她的火候還不夠，尚不足以站上競價台。");
+    const g = succubusGrade(suc);
+    const allow = (AUCTION_INFO.minGrade || ["A", "S"]);
+    if (allow.indexOf(g.grade) === -1) {
+      pushLog("system", `拍賣會只收 ${allow.join("／")} 級的極品。她目前是 ${g.grade} 級（${g.name}），火候還不夠。`);
       S.sellState = null;
       return null;
     }
@@ -368,15 +447,27 @@ function signPermanentContract(succubusId) {
 /* ---------- 道具 ---------- */
 function applyEffects(suc, fx) {
   if (!suc || !fx) return;
-  let aff = fx.affection || 0, obe = fx.obedience || 0;
+  let aff = fx.affection || 0, obe = fx.obedience || 0, cha = fx.charm || 0;
   if (suc.contract === "permanent") {
     if (aff > 0) aff = Math.round(aff * 1.5);
     if (obe > 0) obe = Math.round(obe * 1.5);
+    if (cha > 0) cha = Math.round(cha * 1.5);
   }
-  suc.affection = clamp(suc.affection + aff, 0, 100);
-  suc.obedience = clamp(suc.obedience + obe, 0, 100);
+  suc.affection = clampStatObj(suc, "affection", (suc.affection || 0) + aff);
+  suc.obedience = clampStatObj(suc, "obedience", (suc.obedience || 0) + obe);
+  suc.charm     = clampStatObj(suc, "charm",     (suc.charm || 0) + cha);
+  suc.stamina   = clampStatObj(suc, "stamina",   (suc.stamina || 0) + (fx.stamina || 0));
   suc.stress = clamp(suc.stress + (fx.stress || 0), 0, 100);
   suc.hunger = clamp(suc.hunger + (fx.hunger || 0), 0, 100);
+}
+
+function applyWear(suc, wear) {
+  if (!suc || !wear) return;
+  if (wear.affection) suc.affection = clampStatObj(suc, "affection", (suc.affection || 0) + wear.affection);
+  if (wear.obedience) suc.obedience = clampStatObj(suc, "obedience", (suc.obedience || 0) + wear.obedience);
+  if (wear.charm)     suc.charm     = clampStatObj(suc, "charm",     (suc.charm || 0) + wear.charm);
+  if (wear.stamina)   suc.stamina   = clampStatObj(suc, "stamina",   (suc.stamina || 0) + wear.stamina);
+  if (wear.stress)    suc.stress    = clamp(suc.stress + wear.stress, 0, 100);
 }
 
 function consumeItemByStory(itemId, succubusId) {
@@ -388,6 +479,7 @@ function consumeItemByStory(itemId, succubusId) {
   if (item && suc) {
     const before = snapStats(suc);
     applyEffects(suc, item.effects);
+    if (item.satiates) suc.hunger = 0;   // 吃飽 → 飢餓歸零
     if (item.masterHp) {
       S.master.hp = clamp(S.master.hp + item.masterHp, 0, S.master.maxHp);
       pushLog("system", `駕馭「${item.name}」耗去了你 ${-item.masterHp} 點體力。`);
@@ -441,6 +533,63 @@ function buyItem(itemId) {
   return true;
 }
 
+/* ---------- 項圈／牽引繩商店 ---------- */
+function collarShopItems(type) {
+  return [...COLLARS, ...LEASHES].filter(g => g.source === type);
+}
+
+function buyGear(gearId) {
+  const g = getGearDef(gearId);
+  if (!g) return false;
+  if (!S.gear) S.gear = {};
+  if (S.master.gold < g.price) {
+    pushLog("system", `你的錢袋不夠沉，還差 ${g.price - S.master.gold} 金。`);
+    return false;
+  }
+  if (S.master.rank < (g.rankReq || 1)) {
+    pushLog("system", `你的階級尚不足以購入「${g.name}」，需晉升至【${getRank(g.rankReq || 1).name}】。`);
+    return false;
+  }
+  S.master.gold -= g.price;
+  S.gear[gearId] = (S.gear[gearId] || 0) + 1;
+  pushLog("system", `你購入了「${g.name}」。${g.desc}`);
+  return true;
+}
+
+function equipGear(succubusId, gearId) {
+  const suc = getSuccubus(succubusId);
+  const kind = gearKind(gearId);
+  if (!suc || !kind) return false;
+  if (gearOwnedCount(gearId) <= 0) return false;
+  if (!S.gear) S.gear = {};
+
+  const prevId = suc[kind];
+  if (prevId) S.gear[prevId] = (S.gear[prevId] || 0) + 1;   // 換下的回到背包
+
+  S.gear[gearId] -= 1;
+  if (S.gear[gearId] <= 0) delete S.gear[gearId];
+  suc[kind] = gearId;
+
+  const g = getGearDef(gearId);
+  pushLog("system", `${suc.name} 配上了「${g.name}」（${g.material}·${g.look}·${g.weight}）。`);
+  return true;
+}
+
+function unequipGear(succubusId, kind) {
+  const suc = getSuccubus(succubusId);
+  if (!suc) return false;
+  const id = suc[kind];
+  if (!id) return false;
+  if (!S.gear) S.gear = {};
+  S.gear[id] = (S.gear[id] || 0) + 1;
+  suc[kind] = "";
+  pushLog("system", `${suc.name} 卸下了「${getGearDef(id).name}」。`);
+  return true;
+}
+
+/* 是否繫妥（同時有項圈與牽繩＝可被牽引） */
+function isLeashReady(suc) { return !!(suc && suc.collar && suc.leash); }
+
 /* ---------- AI 指令結算 ---------- */
 function processAICommands(cmd) {
   if (!cmd) return;
@@ -455,6 +604,11 @@ function processAICommands(cmd) {
       if (!c) continue;
       switch (c.type) {
         case "item": consumeItemByStory(c.itemId, c.succubusId); break;
+        case "feed": {
+          const suc = getSuccubus(c.succubusId) || currentSuccubus();
+          if (suc) { suc.hunger = 0; pushLog("system", `［${suc.name}］飽足，飢餓歸零`); }
+          break;
+        }
         case "stat": {
           const suc = getSuccubus(c.succubusId) || currentSuccubus();
           if (suc && c.delta) {
@@ -517,12 +671,19 @@ function loadGame() {
     S.succubi.forEach(s => {
       if (typeof s.present !== "boolean") s.present = true;
       if (typeof s.place !== "string") s.place = "";
+      if (typeof s.charm !== "number") s.charm = 0;
+      if (typeof s.stamina !== "number") s.stamina = 0;
+      if (typeof s.collar !== "string") s.collar = "";
+      if (typeof s.leash !== "string") s.leash = "";
+      if (!s.speechStyle) { const p = PERSONALITIES.find(x => x.id === s.personality); s.speechStyle = p ? p.speech : ""; }
     });
     S.inventory = Array.isArray(S.inventory) ? S.inventory : [];
+    S.gear = (S.gear && typeof S.gear === "object") ? S.gear : {};
     S.ownedHouses = Array.isArray(S.ownedHouses) ? S.ownedHouses : ["oldtown_loft"];
     S.currentChoices = Array.isArray(S.currentChoices) ? S.currentChoices : [];
     S.logs = Array.isArray(S.logs) ? S.logs : [];
     S.facts = Array.isArray(S.facts) ? S.facts : [];
+    S.history = Array.isArray(S.history) ? S.history : [];
     S.hasPurchased = !!S.hasPurchased || S.succubi.length > 0;
     if (typeof S.day !== "number") S.day = 1;
     if (typeof S.subPhase !== "number") S.subPhase = 0;

@@ -8,7 +8,7 @@ const DISTRICT_RANK = { oldtown: 1, lantern: 2, tower: 3, outskirt: 4 };
 
 function defaultState() {
   return {
-    master: { hp: 100, maxHp: 100, gold: 800, exp: 0, rank: 1, style: "gentle", persona: "" },
+    master: { hp: 100, maxHp: 100, gold: 1000, exp: 0, rank: 1, style: "gentle", persona: "" },
     day: 1,
     subPhase: 0,
     currentDistrictId: "oldtown",
@@ -31,7 +31,6 @@ function defaultState() {
 
 function ensureState() { if (!S) S = defaultState(); }
 
-/* ---------- 工具 ---------- */
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -62,7 +61,6 @@ function currentSuccubus() { return S.succubi.length ? S.succubi[0] : null; }
 function isHighDistrict(id) { const d = getDistrict(id); return d ? !!d.isHigh : false; }
 function districtRankReq(id) { return DISTRICT_RANK[id] || 1; }
 
-/* ---------- 配件（項圈／牽引繩） ---------- */
 function getGearDef(id) {
   if (!id) return null;
   return COLLARS.find(g => g.id === id) || LEASHES.find(g => g.id === id) || null;
@@ -74,7 +72,6 @@ function gearKind(id) {
 }
 function gearOwnedCount(id) { return (S.gear && S.gear[id]) ? S.gear[id] : 0; }
 
-/* ---------- 等級 ---------- */
 function gradeFromScore(score) {
   let g = SUCCUBUS_GRADES[0];
   for (const t of SUCCUBUS_GRADES) if (score >= t.minScore) g = t;
@@ -117,13 +114,11 @@ function notifyStatChange(suc, before) {
   if (parts.length) pushLog("system", `［${suc.name}］${parts.join("　")}`);
 }
 
-/* ---------- 好感加成 ---------- */
 function calcRelRate(suc) {
   if (!suc) return 1;
   return suc.affection >= 55 ? 1.6 : 0.4;
 }
 
-/* ---------- 階級 ---------- */
 function addMasterExp(amount) {
   if (!S) return;
   S.master.exp += Math.round(amount);
@@ -140,7 +135,6 @@ function checkMasterRank() {
   }
 }
 
-/* ---------- 隨機生成魅魔 ---------- */
 function rollSuccubus(raceKey) {
   const race = RACES.find(r => r.key === raceKey) || pick(RACES);
   const p = pick(PERSONALITIES), ap = pick(APPEARANCES), sc = pick(SCENTS);
@@ -160,7 +154,6 @@ function rollSuccubus(raceKey) {
   };
 }
 
-/* ---------- 時間 ---------- */
 function advanceTime(phases) {
   if (!phases || phases <= 0) return;
   for (let i = 0; i < phases; i++) {
@@ -178,25 +171,21 @@ function triggerDailySettlement() {
   let hpCost = 0, goldCost = 0, starveCount = 0;
 
   for (const s of S.succubi) {
-    // 自然消退（有了下降機制，數值不再輕易滿頂）
     s.affection = clampStatObj(s, "affection", (s.affection || 0) - 3);
     s.obedience = clampStatObj(s, "obedience", (s.obedience || 0) - 2);
-    s.charm     = clampStatObj(s, "charm",     (s.charm || 0) - 2);
+    s.charm     = clampStatObj(s, "charm",     (s.charm || 0) - 1);
     s.stamina   = clampStatObj(s, "stamina",   (s.stamina || 0) - 1);
     s.stress = clamp(s.stress + 4, 0, 100);
 
-    // 配戴被動加成
     if (s.collar) { const c = getGearDef(s.collar); if (c && c.wear) applyWear(s, c.wear); }
     if (s.leash)  { const l = getGearDef(s.leash);  if (l && l.wear) applyWear(s, l.wear); }
 
-    // 永久契約回饋
     if (s.contract === "permanent") {
       s.affection = clampStatObj(s, "affection", (s.affection || 0) + 4);
       s.stress = clamp(s.stress - 2, 0, 100);
       permIncome += 15;
     }
 
-    // 餵食：負擔得起→飽足歸零；否則挨餓
     let fed = false;
     if (s.raceKey === "pure") {
       if (S.master.hp > 6) { S.master.hp = clamp(S.master.hp - 6, 0, S.master.maxHp); hpCost += 6; fed = true; }
@@ -219,7 +208,6 @@ function triggerDailySettlement() {
   else pushLog("system", `你名下的產業為你帶來 ${income} 金的進帳。`);
 }
 
-/* ---------- 市場候選 ---------- */
 function generateMarketCandidates(type) {
   const list = [];
   const count = 3 + Math.floor(Math.random() * 2);
@@ -270,7 +258,6 @@ function openMarket(type) {
     if (typeof renderAll === "function") renderAll();
     return;
   }
-
   S.market.type = type;
   const cache = S.market.cache || (S.market.cache = {});
   const entry = cache[type];
@@ -310,7 +297,6 @@ function confirmPurchase() {
     if (typeof renderMarket === "function") renderMarket();
     return;
   }
-
   S.master.gold -= c.price;
   const suc = {
     id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
@@ -328,7 +314,6 @@ function confirmPurchase() {
     present: true, place: "",
     collar: "", leash: ""
   };
-
   S.succubi.push(suc);
   S.hasPurchased = true;
 
@@ -350,7 +335,6 @@ function confirmPurchase() {
   if (typeof renderAll === "function") renderAll();
 }
 
-/* ---------- 出售 ---------- */
 function computeQuality(suc) {
   return Math.round(
     (suc.affection || 0) * 0.8 + (suc.obedience || 0) * 1.0 +
@@ -423,7 +407,6 @@ function executeSell() {
   return true;
 }
 
-/* ---------- 永久契約 ---------- */
 function signPermanentContract(succubusId) {
   const suc = getSuccubus(succubusId);
   if (!suc) return false;
@@ -444,7 +427,6 @@ function signPermanentContract(succubusId) {
   return true;
 }
 
-/* ---------- 道具 ---------- */
 function applyEffects(suc, fx) {
   if (!suc || !fx) return;
   let aff = fx.affection || 0, obe = fx.obedience || 0, cha = fx.charm || 0;
@@ -479,7 +461,7 @@ function consumeItemByStory(itemId, succubusId) {
   if (item && suc) {
     const before = snapStats(suc);
     applyEffects(suc, item.effects);
-    if (item.satiates) suc.hunger = 0;   // 吃飽 → 飢餓歸零
+    if (item.satiates) suc.hunger = 0;
     if (item.masterHp) {
       S.master.hp = clamp(S.master.hp + item.masterHp, 0, S.master.maxHp);
       pushLog("system", `駕馭「${item.name}」耗去了你 ${-item.masterHp} 點體力。`);
@@ -493,7 +475,6 @@ function consumeItemByStory(itemId, succubusId) {
 
 function useItemOnSuccubus(itemId, succubusId) { return consumeItemByStory(itemId, succubusId); }
 
-/* ---------- 道具商店 ---------- */
 const SHOP_INFO = {
   official:    { name: "官方道具行",     desc: "高塔區的官方道具行，明碼標價、童叟無欺。", riskLabel: "正規" },
   blackmarket: { name: "暗巷黑市道具鋪", desc: "暗巷深處的祕密鋪子，只賣些見不得光的玩意。", riskLabel: "違禁" }
@@ -533,7 +514,6 @@ function buyItem(itemId) {
   return true;
 }
 
-/* ---------- 項圈／牽引繩商店 ---------- */
 function collarShopItems(type) {
   return [...COLLARS, ...LEASHES].filter(g => g.source === type);
 }
@@ -562,14 +542,11 @@ function equipGear(succubusId, gearId) {
   if (!suc || !kind) return false;
   if (gearOwnedCount(gearId) <= 0) return false;
   if (!S.gear) S.gear = {};
-
   const prevId = suc[kind];
-  if (prevId) S.gear[prevId] = (S.gear[prevId] || 0) + 1;   // 換下的回到背包
-
+  if (prevId) S.gear[prevId] = (S.gear[prevId] || 0) + 1;
   S.gear[gearId] -= 1;
   if (S.gear[gearId] <= 0) delete S.gear[gearId];
   suc[kind] = gearId;
-
   const g = getGearDef(gearId);
   pushLog("system", `${suc.name} 配上了「${g.name}」（${g.material}·${g.look}·${g.weight}）。`);
   return true;
@@ -587,10 +564,8 @@ function unequipGear(succubusId, kind) {
   return true;
 }
 
-/* 是否繫妥（同時有項圈與牽繩＝可被牽引） */
 function isLeashReady(suc) { return !!(suc && suc.collar && suc.leash); }
 
-/* ---------- AI 指令結算 ---------- */
 function processAICommands(cmd) {
   if (!cmd) return;
 
@@ -607,6 +582,27 @@ function processAICommands(cmd) {
         case "feed": {
           const suc = getSuccubus(c.succubusId) || currentSuccubus();
           if (suc) { suc.hunger = 0; pushLog("system", `［${suc.name}］飽足，飢餓歸零`); }
+          break;
+        }
+        case "train": {
+          const suc = getSuccubus(c.succubusId) || currentSuccubus();
+          if (suc) {
+            const before = snapStats(suc);
+            const obe = clamp(Math.round(c.obedience || 0), 0, 40);
+            suc.obedience = clampStatObj(suc, "obedience", (suc.obedience || 0) + obe);
+            if (c.affection) suc.affection = clampStatObj(suc, "affection", (suc.affection || 0) + c.affection);
+            if (c.charm) suc.charm = clampStatObj(suc, "charm", (suc.charm || 0) + c.charm);
+            if (c.stamina) suc.stamina = clampStatObj(suc, "stamina", (suc.stamina || 0) + c.stamina);
+            if (c.stress) suc.stress = clamp(suc.stress + c.stress, 0, 100);
+            if (c.hunger) suc.hunger = clamp(suc.hunger + c.hunger, 0, 100);
+            notifyStatChange(suc, before);
+            const expGain = Math.round(c.exp != null ? c.exp : obe * 0.8);
+            if (expGain) addMasterExp(expGain);
+            if (c.hp) {
+              S.master.hp = clamp(S.master.hp + c.hp, 0, S.master.maxHp);
+              pushLog("system", `這套調教耗去你 ${-c.hp} 點體力。`);
+            }
+          }
           break;
         }
         case "stat": {
@@ -642,13 +638,11 @@ function processAICommands(cmd) {
   if (typeof renderAll === "function") renderAll();
 }
 
-/* ---------- 日誌 ---------- */
 function pushLog(type, text) {
   if (!S.logs) S.logs = [];
   S.logs.push({ type, text, t: Date.now() });
 }
 
-/* ---------- 存檔 ---------- */
 const SAVE_KEY = "ck_save_v4";
 
 function saveGame() {

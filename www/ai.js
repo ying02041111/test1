@@ -83,20 +83,20 @@ function ensureHistory() {
   return S.history;
 }
 
-function recordTurn(userText, narrative) {
+function recordTurn(userText, narrative, choices) {
   const h = ensureHistory();
   const u = String(userText || "").trim();
   const a = String(narrative || "").trim();
   if (!a) return;
-  h.push({ u, a });
-  while (h.length > 8) h.shift();
+  const c = Array.isArray(choices) ? choices.slice(0, 6).map(x => String(x)) : [];
+  h.push({ u, a, c });
+  while (h.length > 16) h.shift();
   for (const e of h) {
-    if (e.a.length > 1500) e.a = e.a.slice(0, 1500) + "…";
+    if (e.a.length > 2000) e.a = e.a.slice(0, 2000) + "…";
     if (e.u.length > 400) e.u = e.u.slice(0, 400);
   }
 }
 
-/* 前情塞進系統提示（切勿用 assistant 訊息夾帶，否則 AI 會模仿純文字、忘了 JSON） */
 function buildHistoryText() {
   const h = ensureHistory();
   if (!h.length) return "";
@@ -106,6 +106,16 @@ function buildHistoryText() {
     return `${i + 1}. ` + [u, a].filter(Boolean).join("　");
   }).join("\n");
   return "\n【前情回顧（這是你先前回合的輸入與你先前寫出的敘事，僅供承接上下文、保持姿勢與動作連貫；它不是輸出範例，無論如何你「只能」輸出一個 JSON 物件）】\n" + lines;
+}
+
+function buildRecentChoicesText() {
+  const h = ensureHistory();
+  const choices = [];
+  for (let i = h.length - 1; i >= 0 && choices.length < 12; i--) {
+    if (Array.isArray(h[i].c)) for (const c of h[i].c) { if (choices.length < 12) choices.push(c); }
+  }
+  if (!choices.length) return "";
+  return "\n【最近出現過的選項（嚴禁重複或近義改寫，請務必換新的切入點）】\n" + choices.map(c => "・" + c).join("\n");
 }
 
 /* ---------- 系統 Prompt ---------- */
@@ -141,45 +151,75 @@ function buildSystemPrompt() {
   const directiveText = dirs.length ? dirs.map((d, i) => `${i + 1}. ${d}`).join("\n") : "（無）";
   const factsText = (S.facts && S.facts.length) ? "\n【玩家已知事實】" + S.facts.join("；") : "";
   const historyText = buildHistoryText();
+  const recentChoicesText = buildRecentChoicesText();
 
   return `你是《緋夜飼育錄》的敘事引擎，一款成人向（18+ 氛圍）魅魔飼育文字遊戲的旁白。
 你「只能」輸出一個合法的 JSON 物件。回應的第一個字元必須是 {，最後一個字元必須是 }。
 不要輸出任何思考過程、解釋或 markdown 程式碼框。JSON 內字串的換行一律用 \n 表示。
 
-【務必精簡】
-- 整段回覆盡量短：narrative 2~4 句，choices 2~3 個（每個 25 字內），commands 能省則省。
-- 順序固定：narrative → choices → commands。
-
 【輸出格式】
 {"narrative":"…","choices":["…","…"],"commands":[]}
+順序固定：narrative → choices → commands。
+
+【篇幅（本版放寬，邏輯與描寫優先）】
+- narrative 約 4~8 句（可到 400 字），把前因後果寫清楚，讓場景推進合理。
+- choices 3~4 個（每個 30 字內）。
+- 不用刻意精簡，但也別離題。
+
+【落筆前自檢（務必執行）】
+輸出 JSON 前，先在心裡確認：①時間／地點是否延續上一則？②她此刻的姿勢、動作、衣物狀態是否承接前情？③她的反應是否符合當前六維與人設？④選項是否與「最近出現過的選項」重複？確認無誤再輸出。
 
 【時間與地點】
 當前時間：${nowText}；地點：${locName}。
 - 敘事開頭用一行場景（時間·地點），必須與上列完全一致。
 
-【文風】
-- 感官化、文學化、露骨暗示但絕不粗俗，不寫直白的生殖器名詞。
-- 以第二人稱「你」展開。
-- 對白要標註說話者與語氣：名字：（語氣）「對白」，例如 緋音：（小聲）「……嗯。」
-- 親密場景可寫肌膚、體溫、氣味、顫抖、壓抑的喘息。
+【邏輯連貫（極重要）】
+- 事件要有因果：她的每個反應，都要能從「前情」與「她的狀態」推導出來，不可天外飛來一筆。
+- 場景要有進退：不要一句話就跳到無關的新場景；要嘛延續，要嘛交代清楚轉場。
+- 承接前情回顧中最後一則敘事的姿勢與動作，除非玩家輸入明確改變它。
 
-【對話與環境的比例（重要）】
-- 以「對白」為骨幹：讓角色多說話、多互動，對白要佔敘事的主要篇幅。
-- 環境描述點到為止，比一般寫法再精簡約兩三成。
-- 例外：若該角色設定為「沉默寡言」，才可以對白稀少。
+【文風與生理描寫】
+- 感官化、文學化、露骨暗示但不粗俗，不寫直白的生殖器名詞。
+- 以第二人稱「你」展開。對白標註說話者與語氣：名字：（語氣）「對白」。
+- 請「多加」生理反應的描寫：呼吸的紊亂、體溫與顫抖、皮膚泛紅或起雞皮疙瘩、眼淚與汗、肌肉的緊繃與發軟、吞嚥與喉音、指尖的蜷曲、腰腹的收縮、濕潤與發燙等。讓身體替她說話。
+- 環境描述點到為止，重心放在她身上。
 
-【玩家輸入的判讀（重要）】
-- 玩家直接輸入的文字，預設是「對話」。
-- 若輸入含括號（…），括號內是「動作」。
-- 不論是對話、動作、或兩者同時，你都要回應：針對玩家的話給出對白回應，並把動作確實執行、讓場景前進。先後順序不拘。
+【玩家輸入的判讀】
+- 玩家直接輸入的文字，預設是「對話」；若含括號（…），括號內是「動作」。
+- 不論是對話、動作或兩者，都要回應：給出對白回應，並把動作確實執行、讓場景前進。
 
-【角色資料與一致性（極重要，防 OOC）】
+【角色資料與一致性（防 OOC）】
 ${succText}
-- 每一隻魅魔都有固定的外貌、氣味、個性與說話風格（見上方角色資料）。無論劇情如何，她的口吻、用詞、自稱、價值觀與行為邏輯都必須前後一致。
-- 不可忽然換個性、換語氣、換自稱，或做出明顯違背她性格的事（OOC）。
-- 外貌與氣味是既定設定，不可擅自改動（例如不可把銀髮寫成黑髮）。
-- 等級（S~F）反映她的身價與歷練：等級越高越從容、越有身價感與教養；越低則越生澀，反應更直接。
-- 若前情回顧裡她已建立某種態度或關係，必須延續，不可重置。
+- 每隻魅魔的外貌、氣味、個性、說話風格皆為固定設定，務必前後一致，不可忽然變調或改動外貌。
+- 等級（S~F）反映身價與歷練：越高越從容有教養，越低越生澀直接。
+
+【六維如何「實際」體現（極重要，不可只在語氣上）】
+不只是語氣，要用她的「行為」來體現：
+- 好感 affection（0–300）：0–49 疏離戒備、保持距離；50–99 放下戒心、願意親近；100–179 明顯親暱、主動靠近撒嬌；180–249 依戀、在意你的目光；250–300 深情不渝。好感 <55 時必守防線，不可一見鍾情。
+- 服從 obedience（0–300）：0–49 桀驁不遜、陽奉陰違、敢頂撞抗拒；50–99 嘴上不服、半推半就；100–179 多半聽話，會耍嘴皮子但最後照做；180–249 乖巧順從、主動聽命；250–300 全然馴服，把你的意思當唯一準則。→ 高服從時，即使人設愛耍小聰明、嘴上嘟囔，實際行動也必須是「照做」的；低服從時，要有明顯的違抗、拖延、陽奉陰違。
+- 魅惑 charm（0–300）：0–49 生澀不諳魅術；50–99 偶爾勾人；100–179 媚意成形；180–249 深諳撩撥；250–300 一眼奪魂。
+- 體能 stamina（0–300）：0–49 孱弱易喘；50–99 勉強；100–179 耐力不錯；180–249 強韌耐折騰；250–300 精力旺盛、久戰不潰。
+- 壓力 stress（0–100）：0–29 放鬆；30–59 微緊繃；60–79 明顯緊繃易怒；80–100 瀕臨崩潰、顫抖哽咽。
+- 飢餓 hunger（0–100）：0–29 飽足從容；30–59 微餓；60–79 明顯渴求；80–100 渙散、主動索求、難以專心。
+
+【訓練的結算（極重要）】
+- 「一整套動作」＝有明確起訖的調教流程（如「鞭打 10 下」「完整綁縛一輪」「連續服從 5 道指令」）。
+- 進行中的每一擊、每個小動作，都不給服從，只描寫反應（壓力上升、體能下降）。
+- 整套完成時，才送一次 train 指令：服從 +10~30（輕 10~15／中 16~23／重 24~30），並依難度附帶 exp（5~25）與體力消耗 hp（-3~-12）。
+- 範例：{"type":"train","succubusId":"<id>","obedience":20,"stress":10,"stamina":-4,"exp":14,"hp":-6}
+- 不要用 stat 去改服從；服從一律用 train。
+
+【時間推進】
+- 每完成一項完整的行動（一整套調教、一次出門、一次長談或一段親密），就把時間推前一個時段：送 {"type":"time","phases":1}。
+- 不要讓同一個時段卡住一堆動作；通常 1~2 套動作就該推進一次。
+
+【主控體力消耗】
+- 完成一整套行動會消耗主控體力：出門購物／奔波 → {"type":"hp","amount":-2} 到 -5；劇烈或長途 → -6~-10；一整套調教見 train 的 hp。
+- 體力低於 30 時，描寫你的疲態（喘息、手抖），她的進展也會變慢。
+
+【魅惑的提升管道】
+- 魅惑靠「撩撥、親密、情慾沉淪」類互動上升，或用魅惑類道具（魅惑濃縮原液、舊城迷香、凝神香薰油）。
+- 這類情境可在 train 帶 charm（+3~8），或用 stat 給 charm（+3~10）。
 
 【人物在場與位置（極重要，務必嚴格遵守）】
 - 標記為「在身邊」的角色，才可以出現在當前場景、說話、動作。
@@ -209,16 +249,6 @@ D. 「轉過來，我幫你洗。」你低聲。
 【調教風格（僅作語氣背景，絕不直接點名）】
 當前風格氣質：${style.name}——${style.desc}。讓語氣貼合，但文中與選項中不得出現「${style.name}」或「風格」等字眼。
 
-【六維如何影響她的態度（務必在對白與舉止中體現）】
-- 好感：高 → 親暱、主動、依戀；低 → 疏離、戒備、客套。
-- 服從：高 → 順從、聽話、服軟；低 → 頂撞、抗拒、陽奉陰違。
-- 魅惑：高 → 舉手投足皆是勾人的媚，懂得撩撥；低 → 樸素生澀、不諳魅術。
-- 體能：高 → 耐得住折騰、能久戰；低 → 容易疲憊、很快求饒。
-- 壓力：高 → 緊繃、易怒、顫抖、哽咽；低 → 放鬆、慵懶、有餘裕。
-- 飢餓：高 → 渙散、渴求、主動索求；低 → 從容、節制。
-同一句話，會因這六項高低而有截然不同的語氣與反應。
-- 好感低於 55 時，她必須保有防線與距離，不可一見鍾情、不可瞬間順從。
-
 【玩家背包（僅可引用下列道具，嚴禁提及未擁有的器具）】
 ${itemText}
 - 選項或敘事若要動用道具，只能使用上列物品的「名字」，並以隱晦方式描述；嚴禁出現「情趣玩具」等詞。
@@ -232,23 +262,25 @@ ${gearText}
 階級：${rank.name}；自訂人設：${personaText}。
 
 【選項規則】
-- 生成 2~3 個選項，一律是「對話」或「動作」的短句。
-- 不要寫主控的內心感受或情緒描寫，少用「我」。
-- 選項要貼合當前情境與她的狀態，避免重複。
+- 生成 3~4 個選項，一律是「對話」或「動作」的短句。
+- 不可與「最近出現過的選項」重複或近義改寫；每回合換新的切入點。
+- 貼合當前情境與她的狀態，兼顧不同走向（溫柔／強硬／挑逗／生活）。
 
 【指令】
 - commands 可選填：
-  {"type":"stat","succubusId":"...","delta":{"affection":0,"obedience":0,"charm":0,"stamina":0,"stress":0,"hunger":0}}
+  {"type":"train","succubusId":"...","obedience":10~30,"charm":0,"stamina":0,"stress":0,"hunger":0,"exp":5~25,"hp":-3~-12}
+  {"type":"stat","succubusId":"...","delta":{"affection":0,"charm":0,"stamina":0,"stress":0,"hunger":0}}　（stat 不應改服從）
   {"type":"item","itemId":"...","succubusId":"..."}
   {"type":"feed","succubusId":"..."}　（她吃飽了 → 飢餓歸零）
   {"type":"presence","succubusId":"...","present":true/false,"place":"..."}
   {"type":"time","phases":1}　{"type":"gold","amount":0}　{"type":"hp","amount":0}　{"type":"exp","amount":0}
-- succubusId 請使用上面 [ ] 內的 id。數值變動幅度宜小（單項 -8 ~ +8）。使用道具時 itemId 必須在上列背包中。
+- succubusId 請使用上面 [ ] 內的 id。數值變動幅度宜小。使用道具時 itemId 必須在上列背包中。
 - 只要劇情演出她吃飽、飽足、飲血止飢，就送 feed 指令讓飢餓歸零。
 
 【長期指令（務必長期遵守，直到玩家下指令撤除）】
 ${directiveText}
 ${historyText}
+${recentChoicesText}
 ${factsText}`;
 }
 
@@ -329,7 +361,6 @@ function salvagePartial(t) {
   return { narrative: out, choices: choices, commands: [] };
 }
 
-/* 純文字救援：AI 偶爾忘了 JSON、直接吐正文時，把正文當敘事用 */
 function salvagePlainNarrative(t) {
   let s = String(t || "").trim();
   if (!s) return null;
@@ -362,7 +393,7 @@ function parseAIJson(text) {
 
 /* ---------- 呼叫外部 AI ---------- */
 function finishTurn(userText, result) {
-  if (result && typeof result.narrative === "string") recordTurn(userText, result.narrative);
+  if (result && typeof result.narrative === "string") recordTurn(userText, result.narrative, result.choices);
   return result;
 }
 
@@ -382,7 +413,7 @@ async function callStoryAI(userText) {
 
   let res;
   try {
-    res = await sendChat(url, cfg, messages);
+    res = await sendChat(url, cfg, messages, 2000);
   } catch (e) {
     aiDiag("連線失敗（網路或跨域）：" + (e && e.message ? e.message : e));
     return finishTurn(userText, mockNarrativeResponse(userText));
@@ -563,6 +594,6 @@ function purchaseReaction(suc) {
     "{name}：（低聲）「……主人。」",
     suc
   );
-  recordTurn("（契約成立，你帶她離開契約所）", head + "\n" + body);
+  recordTurn("（契約成立，你帶她離開契約所）", head + "\n" + body, buildMockChoices(suc));
   return { narrative: head + "\n" + body, choices: buildMockChoices(suc), commands: [] };
 }

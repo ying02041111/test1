@@ -63,6 +63,7 @@ function bindEvents() {
   const bm = $("btn-open-market"); if (bm) bm.addEventListener("click", openMarketChoiceModal);
   const bs = $("btn-open-shop"); if (bs) bs.addEventListener("click", openShopChoice);
   const bc = $("btn-open-collar"); if (bc) bc.addEventListener("click", openCollarShopChoice);
+  const bh = $("btn-open-help"); if (bh) bh.addEventListener("click", openStatGuide);
   const ba = $("btn-open-api"); if (ba) ba.addEventListener("click", openApiModal);
   const bas = $("btn-api-save"); if (bas) bas.addEventListener("click", saveApiSettings);
   const bat = $("btn-api-test"); if (bat) bat.addEventListener("click", doTestApi);
@@ -95,7 +96,6 @@ function handleChoiceClick(text) {
   proceed(text);
 }
 
-/* ps. 開頭＝給 AI 的長期指令 */
 function handlePsCommand(text) {
   let body = text.replace(/^\s*ps\s*[.。．:：,，]?\s*/i, "");
   if (body === text) return false;
@@ -135,11 +135,11 @@ function handlePsCommand(text) {
   return true;
 }
 
-/* 導覽關鍵字：開對應視窗，但不中斷 AI 對白回應 */
 function triggerNav(text) {
   if (!text) return;
   if (/道具店|商店|道具行/.test(text)) { openShopChoice(); return; }
   if (/項圈|牽引繩|牽繩|牽引索|禁具/.test(text)) { openCollarShopChoice(); return; }
+  if (/屬性|說明|數值怎麼/.test(text)) { openStatGuide(); return; }
   if (/契約廳|官方契約|官方市場/.test(text)) { openMarket("official"); return; }
   if (/黑市|暗巷/.test(text)) { openMarket("blackmarket"); return; }
 }

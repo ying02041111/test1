@@ -47,7 +47,6 @@ function hideThinking() {
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
 }
 
-/* ---------- 總渲染 ---------- */
 function renderAll() {
   renderStatusBar();
   renderStoryLog();
@@ -72,7 +71,6 @@ function switchTab(tabId) {
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tabId));
 }
 
-/* ---------- 劇情 ---------- */
 function appendStoryMessage(type, text) {
   pushLog(type, text);
   const log = document.getElementById("story-log");
@@ -96,7 +94,6 @@ function renderChoices() {
   box.innerHTML = S.currentChoices.map((c, i) => `<button class="choice-btn" data-i="${i}">${escapeHtml(c)}</button>`).join("");
 }
 
-/* ---------- 主控 ---------- */
 function renderMaster() {
   const m = S.master;
   const rank = getRank(m.rank);
@@ -111,7 +108,6 @@ function renderMaster() {
   document.getElementById("master-persona").value = m.persona || "";
 }
 
-/* ---------- 魅魔 ---------- */
 function statItem(label, val, cls, max, color) {
   const mx = max || 100;
   const pct = Math.max(0, Math.min(100, ((val || 0) / mx) * 100));
@@ -207,6 +203,7 @@ function openSuccubusDetail(id) {
       ${s.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>　${escapeHtml(s.defect.desc || "")}</div>` : ""}
       ${s.background ? `<div class="row"><b>來歷</b>　${escapeHtml(s.background)}</div>` : ""}
       ${succubusStatsHtml(s)}
+      <div class="row"><button class="btn" onclick="openStatGuide()">屬性說明（六個數值怎麼加減）</button></div>
       <div class="row" style="margin-top:6px"><b>配件</b>　${gearStatusTag(s)}</div>
       ${gearPickerRow(s, "collar", "項圈")}
       ${gearPickerRow(s, "leash", "牽引繩")}
@@ -220,6 +217,22 @@ function doEquipGear(sucId, gearId) {
 }
 function doUnequipGear(sucId, kind) {
   if (unequipGear(sucId, kind)) { saveGame(); openSuccubusDetail(sucId); renderAll(); showToast("已卸下。"); }
+}
+
+/* ---------- 屬性說明 ---------- */
+function openStatGuide() {
+  const body = document.getElementById("help-body");
+  if (!body) return;
+  body.innerHTML = (STAT_GUIDE || []).map(g => `
+    <div class="row" style="display:block;margin-bottom:12px">
+      <div style="font-weight:700;color:${g.color}">${g.name}</div>
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">▲ 提升：${g.up.join("、")}</div>
+      <div style="font-size:12.5px;color:var(--ink-soft)">▼ 下降：${g.down.join("、")}</div>
+    </div>`).join("") + `
+    <div class="row" style="display:block;margin-top:8px;font-size:12.5px;color:var(--ink-soft)">
+      綜合等級（S~F）＝ 平均(魅惑, 服從, 體能)。等級越高，賣價越高；拍賣會只收 A／S 級。
+    </div>`;
+  openModal("modal-help");
 }
 
 /* ---------- 背包 ---------- */

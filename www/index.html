@@ -12,7 +12,7 @@
       <div class="brand">緋夜飼育錄</div>
       <div class="status-meta">
         <span id="stat-day">第 1 日 · 清晨</span>
-        <span id="stat-gold" class="pill">800 金</span>
+        <span id="stat-gold" class="pill">1000 金</span>
         <span id="stat-rank" class="rank-badge">見習飼育員</span>
       </div>
     </header>
@@ -30,6 +30,7 @@
       <section id="panel-succubi" class="panel">
         <div class="panel-head">
           <h2>魅魔</h2>
+          <button id="btn-open-help" class="btn">屬性說明</button>
           <button id="btn-open-market" class="btn">緋夜市場</button>
         </div>
         <div id="succubi-list" class="succubi-list"></div>
@@ -45,7 +46,7 @@
           </div>
           <div class="stat-row">
             <span>體力 <b id="master-hp">100</b> / <b>100</b></span>
-            <span>金錢 <b id="master-gold">800</b></span>
+            <span>金錢 <b id="master-gold">1000</b></span>
           </div>
           <div class="field">
             <label for="master-style">訓練風格</label>
@@ -114,6 +115,17 @@
         <button class="modal-close" data-close="modal-collar">×</button>
       </div>
       <div id="collar-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 屬性說明視窗 -->
+  <div id="modal-help" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h2>屬性說明</h2>
+        <button class="modal-close" data-close="modal-help">×</button>
+      </div>
+      <div id="help-body" class="modal-body"></div>
     </div>
   </div>
 

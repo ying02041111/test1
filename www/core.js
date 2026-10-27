@@ -11,9 +11,14 @@ function defaultState() {
     master: { hp: 100, maxHp: 100, gold: 1000, exp: 0, rank: 1, style: "gentle", persona: "" },
     day: 1,
     subPhase: 0,
+    dayMode: "training",
+    needDayChoice: true,
+    party: [],
     currentDistrictId: "oldtown",
     currentHouseId: "oldtown_loft",
     ownedHouses: ["oldtown_loft"],
+    rentedOut: [],
+    housePrices: {},
     succubi: [],
     inventory: [],
     gear: {},
@@ -22,6 +27,7 @@ function defaultState() {
     summary: "",
     facts: [],
     history: [],
+    lastUsage: null,
     market: { type: null, candidates: [], selectedId: null, cache: {} },
     sellState: null,
     hasPurchased: false,
@@ -142,6 +148,7 @@ function rollSuccubus(raceKey) {
     id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
     name: randomName(),
     raceKey: race.key, raceName: race.name, raceDesc: race.desc,
+    foodDesc: race.foodDesc || "",
     appearance: ap, scent: sc,
     personality: p.id, personalityName: p.name, personalityDesc: p.desc,
     speechStyle: p.speech || "",
@@ -170,6 +177,12 @@ function triggerDailySettlement() {
   let permIncome = 0;
   let hpCost = 0, goldCost = 0, starveCount = 0;
 
+  // 新的一天：大家回到家中，尚未決定今日模式
+  S.succubi.forEach(s => { s.present = true; s.place = ""; });
+  S.dayMode = null;
+  S.needDayChoice = true;
+  S.party = [];
+
   for (const s of S.succubi) {
     s.affection = clampStatObj(s, "affection", (s.affection || 0) - 3);
     s.obedience = clampStatObj(s, "obedience", (s.obedience || 0) - 2);
@@ -186,26 +199,132 @@ function triggerDailySettlement() {
       permIncome += 15;
     }
 
+    // 依種族餵食
+    const race = RACES.find(r => r.key === s.raceKey);
+    const feed = (race && race.feed) ? race.feed : { type: "gold", cost: 20 };
     let fed = false;
-    if (s.raceKey === "pure") {
-      if (S.master.hp > 6) { S.master.hp = clamp(S.master.hp - 6, 0, S.master.maxHp); hpCost += 6; fed = true; }
+    if (feed.type === "hp") {
+      if (S.master.hp > feed.cost) { S.master.hp = clamp(S.master.hp - feed.cost, 0, S.master.maxHp); hpCost += feed.cost; fed = true; }
     } else {
-      if (S.master.gold >= 20) { S.master.gold -= 20; goldCost += 20; fed = true; }
+      if (S.master.gold >= feed.cost) { S.master.gold -= feed.cost; goldCost += feed.cost; fed = true; }
     }
     if (fed) s.hunger = 0;
     else { s.hunger = clamp(s.hunger + 15, 0, 100); starveCount++; }
   }
 
   let msg = "新的一日來臨。";
-  if (hpCost > 0) msg += ` 純血魅魔循著你的氣味索食，你的體力被分走了 ${hpCost}。`;
+  if (hpCost > 0) msg += ` 幾隻魅魔循著你的氣味索食，你的體力被分走了 ${hpCost}。`;
   if (goldCost > 0) msg += ` 你為魅魔張羅吃食，花去 ${goldCost} 金。`;
   if (starveCount > 0) msg += ` 有 ${starveCount} 隻魅魔沒能吃飽，正餓著。`;
+
+  // 房產結算
+  fluctuateHousePrices();
+  if (!S.ownedHouses.includes(S.currentHouseId)) {
+    const rent = dailyRent(S.currentHouseId);
+    const paid = Math.min(rent, S.master.gold);
+    S.master.gold -= paid;
+    msg += paid < rent ? ` 你只付得起 ${paid}/${rent} 金房租，拖欠了一部分。` : ` 你為住處支付租金 ${rent} 金。`;
+  }
+  let rentIncome = 0;
+  for (const id of (S.rentedOut || [])) rentIncome += dailyRentIncome(id);
+  if (rentIncome > 0) { S.master.gold += rentIncome; msg += ` 你名下出租的房產帶來 ${rentIncome} 金。`; }
   pushLog("system", msg);
 
   const income = 30 + S.master.rank * 15 + permIncome;
   S.master.gold += income;
   if (permIncome > 0) pushLog("system", `你名下的產業為你帶來 ${income} 金進帳，其中含永久契約的侍奉之禮。`);
   else pushLog("system", `你名下的產業為你帶來 ${income} 金的進帳。`);
+}
+
+/* ---------- 今日模式 ---------- */
+function maybePromptDayMode() {
+  if (S.needDayChoice && typeof openDayModeModal === "function") openDayModeModal();
+}
+
+function setDayMode(mode) {
+  S.dayMode = mode;
+  S.needDayChoice = false;
+  if (typeof closeModal === "function") closeModal("modal-daymode");
+  if (mode === "rest" && S.succubi.length) {
+    S.party = [];
+    if (typeof openPartyModal === "function") { openPartyModal(); return; }
+  }
+  S.party = [];
+  S.succubi.forEach(s => { s.present = true; s.place = ""; });
+  pushLog("system", `第 ${S.day} 日，你選擇了${mode === "training" ? "訓練日" : "休息日"}。`);
+  if (typeof renderAll === "function") renderAll();
+}
+
+function setParty(ids) {
+  S.party = Array.isArray(ids) ? ids : [];
+  S.succubi.forEach(s => {
+    s.present = S.party.includes(s.id);
+    s.place = s.present ? "" : "房裡";
+  });
+  const names = S.party.map(id => (getSuccubus(id) || {}).name).filter(Boolean);
+  pushLog("system", names.length ? `你帶著 ${names.join("、")} 出門。` : "你獨自出門，把她們留在了房裡。");
+  if (typeof renderAll === "function") renderAll();
+}
+
+/* ---------- 房產價格與租賃 ---------- */
+function housePrice(id) {
+  if (!S.housePrices) S.housePrices = {};
+  if (S.housePrices[id] == null) S.housePrices[id] = (getHouse(id) || {}).price || 0;
+  return S.housePrices[id];
+}
+function fluctuateHousePrices() {
+  if (!S.housePrices) S.housePrices = {};
+  for (const d of DISTRICTS) for (const h of d.houses) {
+    const base = h.price || 0;
+    const cur = (S.housePrices[h.id] == null) ? base : S.housePrices[h.id];
+    const pct = Math.random() * 0.09 - 0.04;
+    let next = Math.round(cur * (1 + pct));
+    next = Math.max(Math.round(base * 0.8), Math.min(Math.round(base * 1.3), next));
+    S.housePrices[h.id] = next;
+  }
+}
+function dailyRent(id) { return Math.max(5, Math.round(housePrice(id) * 0.007)); }
+function dailyRentIncome(id) { return Math.max(3, Math.round(housePrice(id) * 0.005)); }
+function sellHousePrice(id) { return Math.max(40, Math.round(housePrice(id) * 0.9)); }
+
+function rentHouse(houseId) {
+  const h = getHouse(houseId);
+  if (!h) return false;
+  if (S.ownedHouses.includes(houseId)) return false;
+  S.currentHouseId = houseId;
+  const d = DISTRICTS.find(x => x.houses.some(y => y.id === houseId));
+  if (d) S.currentDistrictId = d.id;
+  pushLog("system", `你租下了「${h.name}」，日租 ${dailyRent(houseId)} 金。`);
+  return true;
+}
+
+function sellHouse(houseId) {
+  if (houseId === S.currentHouseId) { pushLog("system", "這是你現在的住處，先搬到他處才能販售。"); return false; }
+  const idx = S.ownedHouses.indexOf(houseId);
+  if (idx === -1) return false;
+  S.ownedHouses.splice(idx, 1);
+  S.rentedOut = (S.rentedOut || []).filter(x => x !== houseId);
+  const gold = sellHousePrice(houseId);
+  S.master.gold += gold;
+  pushLog("system", `你將「${getHouse(houseId).name}」以 ${gold} 金售出。`);
+  return true;
+}
+
+function rentOutHouse(houseId) {
+  if (houseId === S.currentHouseId) { pushLog("system", "這是你現在的住處，先搬到他處才能出租。"); return false; }
+  if (!S.ownedHouses.includes(houseId)) return false;
+  if ((S.rentedOut || []).includes(houseId)) return false;
+  if (!S.rentedOut) S.rentedOut = [];
+  S.rentedOut.push(houseId);
+  pushLog("system", `你把「${getHouse(houseId).name}」租了出去，每日可收 ${dailyRentIncome(houseId)} 金。`);
+  return true;
+}
+
+function stopRentOut(houseId) {
+  if (!(S.rentedOut || []).includes(houseId)) return false;
+  S.rentedOut = S.rentedOut.filter(x => x !== houseId);
+  pushLog("system", `你收回了「${getHouse(houseId).name}」。`);
+  return true;
 }
 
 function generateMarketCandidates(type) {
@@ -235,6 +354,7 @@ function generateOneCandidate(type, idx) {
     id: "cand_" + type + "_" + idx + "_" + Math.floor(Math.random() * 10000),
     name: randomName(),
     raceKey: race.key, raceName: race.name, raceDesc: race.desc,
+    foodDesc: race.foodDesc || "",
     appearance: ap, scent: sc,
     personality: p.id, personalityName: p.name, personalityDesc: p.desc,
     speechStyle: p.speech || "",
@@ -302,6 +422,7 @@ function confirmPurchase() {
     id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
     name: c.name,
     raceKey: c.raceKey, raceName: c.raceName, raceDesc: c.raceDesc,
+    foodDesc: c.foodDesc || "",
     appearance: c.appearance, scent: c.scent,
     personality: c.personality, personalityName: c.personalityName, personalityDesc: c.personalityDesc,
     speechStyle: c.speechStyle || "",
@@ -572,6 +693,7 @@ function processAICommands(cmd) {
   if (cmd.narrative && typeof appendStoryMessage === "function") {
     appendStoryMessage("system", sceneHeader());
     appendStoryMessage("story", cmd.narrative);
+    if (typeof appendTokenNote === "function") appendTokenNote();
   }
 
   if (Array.isArray(cmd.commands)) {
@@ -636,6 +758,7 @@ function processAICommands(cmd) {
 
   if (Array.isArray(cmd.choices) && cmd.choices.length) S.currentChoices = cmd.choices;
   if (typeof renderAll === "function") renderAll();
+  maybePromptDayMode();
 }
 
 function pushLog(type, text) {
@@ -674,6 +797,11 @@ function loadGame() {
     S.inventory = Array.isArray(S.inventory) ? S.inventory : [];
     S.gear = (S.gear && typeof S.gear === "object") ? S.gear : {};
     S.ownedHouses = Array.isArray(S.ownedHouses) ? S.ownedHouses : ["oldtown_loft"];
+    S.rentedOut = Array.isArray(S.rentedOut) ? S.rentedOut : [];
+    S.housePrices = (S.housePrices && typeof S.housePrices === "object") ? S.housePrices : {};
+    S.party = Array.isArray(S.party) ? S.party : [];
+    if (typeof S.dayMode !== "string" || !S.dayMode) S.dayMode = "training";
+    if (typeof S.needDayChoice !== "boolean") S.needDayChoice = false;
     S.currentChoices = Array.isArray(S.currentChoices) ? S.currentChoices : [];
     S.logs = Array.isArray(S.logs) ? S.logs : [];
     S.facts = Array.isArray(S.facts) ? S.facts : [];

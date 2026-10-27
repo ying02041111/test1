@@ -4,7 +4,7 @@
 
 const API_SETTINGS_KEY = "ck_api_settings_v1";
 const DIRECTIVES_KEY = "ck_directives_v1";
-const API_DEFAULTS = { key: "", url: "", model: "", thinking: false, reasoningEffort: "high", temperature: 0.9, topP: 1.0 };
+const API_DEFAULTS = { key: "", url: "", model: "", thinking: false, reasoningEffort: "high", temperature: 0.9, topP: 1.0, showTokens: true };
 
 function getApiSettings() {
   try {
@@ -16,6 +16,8 @@ function getApiSettings() {
 }
 
 function persistApiSettings(cfg) { localStorage.setItem(API_SETTINGS_KEY, JSON.stringify(cfg || {})); }
+
+function showTokensEnabled() { return !!getApiSettings().showTokens; }
 
 function getDirectives() {
   try { return JSON.parse(localStorage.getItem(DIRECTIVES_KEY) || "[]"); }
@@ -99,13 +101,15 @@ function recordTurn(userText, narrative, choices) {
 
 function buildHistoryText() {
   const h = ensureHistory();
-  if (!h.length) return "";
+  const summary = (typeof S.summary === "string" && S.summary.trim()) ? S.summary.trim() : "";
   const lines = h.map((e, i) => {
     const u = e.u ? `玩家：「${e.u}」` : "";
     const a = e.a ? `敘事：「${e.a}」` : "";
     return `${i + 1}. ` + [u, a].filter(Boolean).join("　");
   }).join("\n");
-  return "\n【前情回顧（這是你先前回合的輸入與你先前寫出的敘事，僅供承接上下文、保持姿勢與動作連貫；它不是輸出範例，無論如何你「只能」輸出一個 JSON 物件）】\n" + lines;
+  if (!summary && !lines) return "";
+  const sumText = summary ? `【既有摘要】${summary}\n` : "";
+  return "\n【前情回顧（這是你先前回合的輸入與你先前寫出的敘事，僅供承接上下文、保持姿勢與動作連貫；它不是輸出範例，無論如何你「只能」輸出一個 JSON 物件）】\n" + sumText + lines;
 }
 
 function buildRecentChoicesText() {
@@ -116,6 +120,53 @@ function buildRecentChoicesText() {
   }
   if (!choices.length) return "";
   return "\n【最近出現過的選項（嚴禁重複或近義改寫，請務必換新的切入點）】\n" + choices.map(c => "・" + c).join("\n");
+}
+
+/* ---------- token 用量 ---------- */
+function setUsage(narrative, data, sysLen, userText) {
+  S.lastUsage = {
+    prompt: (data && data.usage) ? data.usage.prompt_tokens : Math.round(((sysLen || 0) + String(userText || "").length) * 0.7),
+    completion: (data && data.usage) ? data.usage.completion_tokens : Math.round(String(narrative || "").length * 0.8)
+  };
+}
+
+/* ---------- 壓縮劇情（手動一鍵，把前情濃縮成摘要以省 token） ---------- */
+async function compressStory() {
+  const h = ensureHistory();
+  const existing = (typeof S.summary === "string" && S.summary.trim()) ? S.summary.trim() : "";
+  if (!h.length && !existing) { if (typeof showToast === "function") showToast("目前沒有可壓縮的劇情。"); return; }
+
+  const historyText = h.map((e, i) => `${i + 1}. 玩家：「${e.u}」 敘事：「${e.a}」`).join("\n");
+  const prompt = `請把下面這款文字遊戲的「前情」濃縮成一段 200 字以內的繁體中文摘要。只保留對後續劇情重要的內容：主要角色的名字與外貌特徵、彼此關係與好感、當前正在進行的姿勢或動作、已發生的重要事件、主人的身分與人設。不要新增劇情，不要下結論，只輸出摘要文字。\n${existing ? "【既有摘要】" + existing + "\n" : ""}${historyText}`;
+
+  let summary = "";
+  const cfg = getApiSettings();
+  if (cfg.url && cfg.key) {
+    try {
+      const url = normalizeApiUrl(cfg.url);
+      const res = await sendChat(url, cfg, [
+        { role: "system", content: "你是文字遊戲的劇情摘要助手，只輸出摘要文字，不要 JSON、不要解釋。" },
+        { role: "user", content: prompt }
+      ], 600);
+      if (res.ok) {
+        const data = await res.json();
+        const choice = data && data.choices && data.choices[0];
+        const msg = choice && choice.message;
+        summary = (msg && (msg.content || msg.reasoning_content || "")) || "";
+      }
+    } catch (e) {}
+  }
+
+  if (!summary || !summary.trim()) {
+    summary = h.slice(-4).map(e => e.a).join(" ").slice(0, 240);
+  }
+
+  S.summary = String(summary).trim().slice(0, 400);
+  while (h.length > 2) h.shift();
+
+  if (typeof saveGame === "function") saveGame();
+  if (typeof appendStoryMessage === "function") appendStoryMessage("system", "［壓縮完成］前情已濃縮為摘要，後續 token 用量將大幅下降。");
+  if (typeof renderAll === "function") renderAll();
 }
 
 /* ---------- 系統 Prompt ---------- */
@@ -133,19 +184,25 @@ function buildSystemPrompt() {
         const contract = s.contract === "permanent" ? "永久契約" : "暫時契約";
         const def = s.defect ? `｜缺陷:${s.defect.name}` : "";
         const pres = s.present ? "在身邊" : ("不在" + (s.place ? `（${s.place}）` : ""));
+        const bg = s.background ? `｜來歷:${s.background}` : "";
         const g = (typeof succubusGrade === "function") ? succubusGrade(s) : { grade: "?", name: "" };
         const speech = s.speechStyle || (((PERSONALITIES || []).find(p => p.id === s.personality) || {}).speech || "");
+        const food = s.foodDesc || s.raceDesc || "";
         const gearNames = [];
         if (s.collar && typeof getGearDef === "function") { const c = getGearDef(s.collar); if (c) gearNames.push(c.name); }
         if (s.leash && typeof getGearDef === "function") { const l = getGearDef(s.leash); if (l) gearNames.push(l.name); }
         const gearText = gearNames.length ? `｜配戴:${gearNames.join("、")}` : "";
-        return `[${s.id}] ${s.name}（${s.raceName}｜${s.personalityName}｜${g.grade}級·${g.name}｜${contract}｜${pres}｜好感${s.affection} 服從${s.obedience} 魅惑${s.charm || 0} 體能${s.stamina || 0} 壓力${s.stress} 飢餓${s.hunger}${def}${gearText}）\n　　外貌：${s.appearance}\n　　氣味：${s.scent}\n　　個性：${s.personalityDesc}\n　　說話風格（必須前後一致）：${speech}`;
+        return `[${s.id}] ${s.name}（${s.raceName}｜${s.personalityName}｜${g.grade}級·${g.name}｜${contract}｜${pres}${bg}｜好感${s.affection} 服從${s.obedience} 魅惑${s.charm || 0} 體能${s.stamina || 0} 壓力${s.stress} 飢餓${s.hunger}${def}${gearText}）\n　　食性：${food}\n　　外貌：${s.appearance}\n　　氣味：${s.scent}\n　　個性：${s.personalityDesc}\n　　說話風格（必須前後一致）：${speech}`;
       }).join("\n")
     : "（名下尚無魅魔）";
 
   const itemText = ownedItemNames().length ? ownedItemNames().join("、") : "（無）";
   const gearText = ownedGearText();
   const personaText = m.persona ? m.persona : "（未設定，請自行揣摩主人形象）";
+
+  const modeText = S.dayMode === "rest" ? "休息日" : "訓練日";
+  const partyNames = (S.party || []).map(id => { const s = getSuccubus(id); return s ? s.name : ""; }).filter(Boolean);
+  const partyText = S.dayMode === "rest" ? (partyNames.length ? `今天你帶了：${partyNames.join("、")}。` : "今天你獨自出門，沒有帶任何魅魔。") : "";
 
   const dirs = getDirectives();
   const directiveText = dirs.length ? dirs.map((d, i) => `${i + 1}. ${d}`).join("\n") : "（無）";
@@ -161,10 +218,9 @@ function buildSystemPrompt() {
 {"narrative":"…","choices":["…","…"],"commands":[]}
 順序固定：narrative → choices → commands。
 
-【篇幅（本版放寬，邏輯與描寫優先）】
+【篇幅】
 - narrative 約 4~8 句（可到 400 字），把前因後果寫清楚，讓場景推進合理。
 - choices 3~4 個（每個 30 字內）。
-- 不用刻意精簡，但也別離題。
 
 【落筆前自檢（務必執行）】
 輸出 JSON 前，先在心裡確認：①時間／地點是否延續上一則？②她此刻的姿勢、動作、衣物狀態是否承接前情？③她的反應是否符合當前六維與人設？④選項是否與「最近出現過的選項」重複？確認無誤再輸出。
@@ -172,6 +228,12 @@ function buildSystemPrompt() {
 【時間與地點】
 當前時間：${nowText}；地點：${locName}。
 - 敘事開頭用一行場景（時間·地點），必須與上列完全一致。
+
+【今日模式（務必遵守）】
+今天是${modeText}。${partyText}
+- 訓練日：以調教、訓練、規矩養成為主，穿插日常對話與生活瑣事。訓練的動作維持「細緻」描寫（逐擊、逐動、逐階段）。
+- 休息日：不進行調教訓練；以出門、逛街、旅遊、約會、休閒為主。外出的移動、逛街、採買等日常動作用「大節拍」推進（約粗兩成，別拆成瑣碎小動作）。
+- 只有你「帶了」的魅魔才在身邊；其餘留在家，不可憑空出現在外頭。
 
 【邏輯連貫（極重要）】
 - 事件要有因果：她的每個反應，都要能從「前情」與「她的狀態」推導出來，不可天外飛來一筆。
@@ -181,8 +243,8 @@ function buildSystemPrompt() {
 【文風與生理描寫】
 - 感官化、文學化、露骨暗示但不粗俗，不寫直白的生殖器名詞。
 - 以第二人稱「你」展開。對白標註說話者與語氣：名字：（語氣）「對白」。
-- 請「多加」生理反應的描寫：呼吸的紊亂、體溫與顫抖、皮膚泛紅或起雞皮疙瘩、眼淚與汗、肌肉的緊繃與發軟、吞嚥與喉音、指尖的蜷曲、腰腹的收縮、濕潤與發燙等。讓身體替她說話。
-- 環境描述點到為止，重心放在她身上。
+- 多寫「生理反應」：呼吸紊亂、體溫與顫抖、皮膚泛紅或起雞皮疙瘩、眼淚與汗、肌肉緊繃與發軟、吞嚥與喉音、指尖蜷曲、腰腹收縮、濕潤發燙等，讓身體替她說話。
+- 「環境」與「氣味」的描寫要節制：環境點到為止即可；氣味偶爾（例如貼近、親密時）一句帶過就好，不要每回都提。
 
 【玩家輸入的判讀】
 - 玩家直接輸入的文字，預設是「對話」；若含括號（…），括號內是「動作」。
@@ -190,7 +252,8 @@ function buildSystemPrompt() {
 
 【角色資料與一致性（防 OOC）】
 ${succText}
-- 每隻魅魔的外貌、氣味、個性、說話風格皆為固定設定，務必前後一致，不可忽然變調或改動外貌。
+- 每隻魅魔的外貌、氣味、個性、說話風格、食性皆為固定設定，務必前後一致，不可忽然變調或改動外貌。
+- 食性會影響她的行為：例如純血魅魔渴求你的體液、狐魅嗜甜討食、夢魘需你陪睡。餵食時請依她的食性來演。
 - 等級（S~F）反映身價與歷練：越高越從容有教養，越低越生澀直接。
 
 【六維如何「實際」體現（極重要，不可只在語氣上）】
@@ -207,7 +270,7 @@ ${succText}
 - 進行中的每一擊、每個小動作，都不給服從，只描寫反應（壓力上升、體能下降）。
 - 整套完成時，才送一次 train 指令：服從 +10~30（輕 10~15／中 16~23／重 24~30），並依難度附帶 exp（5~25）與體力消耗 hp（-3~-12）。
 - 範例：{"type":"train","succubusId":"<id>","obedience":20,"stress":10,"stamina":-4,"exp":14,"hp":-6}
-- 不要用 stat 去改服從；服從一律用 train。
+- 不要用 stat 去改服從；服從一律用 train。休息日不可發送 train。
 
 【時間推進】
 - 每完成一項完整的行動（一整套調教、一次出門、一次長談或一段親密），就把時間推前一個時段：送 {"type":"time","phases":1}。
@@ -399,15 +462,18 @@ function finishTurn(userText, result) {
 
 async function callStoryAI(userText) {
   const cfg = getApiSettings();
+  const sysContent = buildSystemPrompt();
 
   if (!cfg.url || !cfg.key) {
     aiDiag("尚未設定 API（缺 Key 或 URL），改用離線模式。");
-    return finishTurn(userText, mockNarrativeResponse(userText));
+    const r = mockNarrativeResponse(userText);
+    setUsage(r.narrative, null, sysContent.length, userText);
+    return finishTurn(userText, r);
   }
 
   const url = normalizeApiUrl(cfg.url);
   const messages = [
-    { role: "system", content: buildSystemPrompt() },
+    { role: "system", content: sysContent },
     { role: "user", content: userText }
   ];
 
@@ -416,19 +482,28 @@ async function callStoryAI(userText) {
     res = await sendChat(url, cfg, messages, 2000);
   } catch (e) {
     aiDiag("連線失敗（網路或跨域）：" + (e && e.message ? e.message : e));
-    return finishTurn(userText, mockNarrativeResponse(userText));
+    const r = mockNarrativeResponse(userText);
+    setUsage(r.narrative, null, sysContent.length, userText);
+    return finishTurn(userText, r);
   }
 
   if (!res.ok) {
     let t = "";
     try { t = await res.text(); } catch (_) {}
     aiDiag(`回應錯誤 ${res.status}（${url}）：${(t || "").slice(0, 140)}`);
-    return finishTurn(userText, mockNarrativeResponse(userText));
+    const r = mockNarrativeResponse(userText);
+    setUsage(r.narrative, null, sysContent.length, userText);
+    return finishTurn(userText, r);
   }
 
   let data;
   try { data = await res.json(); }
-  catch (e) { aiDiag("回應不是 JSON。"); return finishTurn(userText, mockNarrativeResponse(userText)); }
+  catch (e) {
+    aiDiag("回應不是 JSON。");
+    const r = mockNarrativeResponse(userText);
+    setUsage(r.narrative, null, sysContent.length, userText);
+    return finishTurn(userText, r);
+  }
 
   const choice = data && data.choices && data.choices[0];
   const msg = choice && choice.message;
@@ -443,6 +518,7 @@ async function callStoryAI(userText) {
     if (!Array.isArray(parsed.choices) || !parsed.choices.length) {
       parsed.choices = buildMockChoices(currentSuccubus());
     }
+    setUsage(parsed.narrative, data, sysContent.length, userText);
     return finishTurn(userText, parsed);
   }
 
@@ -452,7 +528,9 @@ async function callStoryAI(userText) {
   info += rawC ? "：" + rawC.slice(0, 200) : "：正文為空";
   if (!rawC && think) info += `（只有思考內容，請確認已關閉思考）`;
   aiDiag(info);
-  return finishTurn(userText, mockNarrativeResponse(userText));
+  const r = mockNarrativeResponse(userText);
+  setUsage(r.narrative, null, sysContent.length, userText);
+  return finishTurn(userText, r);
 }
 
 /* ---------- 連線測試 ---------- */

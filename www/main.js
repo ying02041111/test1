@@ -37,6 +37,7 @@ function init() {
     }
     bindEvents();
     renderAll();
+    if (typeof maybePromptDayMode === "function") maybePromptDayMode();
   } catch (e) {
     showErrorBox("初始化失敗：" + (e.message || e));
   }
@@ -49,6 +50,8 @@ function bindEvents() {
 
   const send = $("btn-send"); if (send) send.addEventListener("click", handleSendAction);
   const input = $("story-input-field"); if (input) input.addEventListener("keydown", e => { if (e.key === "Enter") handleSendAction(); });
+
+  const compress = $("btn-compress"); if (compress) compress.addEventListener("click", handleCompressStory);
 
   const cl = $("choice-list"); if (cl) cl.addEventListener("click", e => {
     const btn = e.target.closest(".choice-btn");
@@ -94,6 +97,11 @@ function handleSendAction() {
 function handleChoiceClick(text) {
   appendStoryMessage("player", text);
   proceed(text);
+}
+
+async function handleCompressStory() {
+  showToast("壓縮中……");
+  if (typeof compressStory === "function") await compressStory();
 }
 
 function handlePsCommand(text) {
@@ -154,6 +162,7 @@ function maybeUseItemByText(text) {
 }
 
 async function proceed(text) {
+  if (S.needDayChoice) { if (typeof maybePromptDayMode === "function") maybePromptDayMode(); return; }
   try {
     triggerNav(text);
 
@@ -180,15 +189,15 @@ async function proceed(text) {
 function handleBuyHouse(houseId) {
   const house = getHouse(houseId);
   if (!house) return;
+  if (S.ownedHouses.includes(houseId)) { showToast("你已擁有此屋。"); return; }
   const d = DISTRICTS.find(x => x.houses.some(h => h.id === houseId));
-  const rankReq = d ? (typeof districtRankReq === "function" ? districtRankReq(d.id) : 1) : 1;
+  const rankReq = d ? districtRankReq(d.id) : 1;
   if (S.master.rank < rankReq) { showToast(`需先晉升至【${getRank(rankReq).name}】才能進入${d ? d.name : ""}。`); return; }
-  if (S.master.gold < house.price) { showToast("你的錢袋不夠沉。"); return; }
-  S.master.gold -= house.price;
+  const price = (typeof housePrice === "function") ? housePrice(houseId) : (house.price || 0);
+  if (S.master.gold < price) { showToast("你的錢袋不夠沉。"); return; }
+  S.master.gold -= price;
   S.ownedHouses.push(houseId);
-  S.currentHouseId = houseId;
-  S.currentDistrictId = d ? d.id : S.currentDistrictId;
-  pushLog("system", `你購下了「${house.name}」，領地又添了一處。`);
+  pushLog("system", `你購下了「${house.name}」。（${price} 金）`);
   renderAll();
   saveGame();
 }
@@ -196,14 +205,35 @@ function handleBuyHouse(houseId) {
 function handleMoveHouse(houseId) {
   const house = getHouse(houseId);
   if (!house || !S.ownedHouses.includes(houseId)) return;
+  if ((S.rentedOut || []).includes(houseId)) { showToast("此屋出租中，請先收回。"); return; }
   const d = DISTRICTS.find(x => x.houses.some(h => h.id === houseId));
-  const rankReq = d ? (typeof districtRankReq === "function" ? districtRankReq(d.id) : 1) : 1;
+  const rankReq = d ? districtRankReq(d.id) : 1;
   if (S.master.rank < rankReq) { showToast(`需先晉升至【${getRank(rankReq).name}】才能進入${d ? d.name : ""}。`); return; }
   S.currentHouseId = houseId;
   S.currentDistrictId = d ? d.id : S.currentDistrictId;
   pushLog("system", `你遷入了「${house.name}」。`);
   renderAll();
   saveGame();
+}
+
+function handleSellHouse(houseId) {
+  if (sellHouse(houseId)) { renderAll(); saveGame(); showToast("已售出。"); }
+  else showToast("無法販售。");
+}
+
+function handleRentOutHouse(houseId) {
+  if (rentOutHouse(houseId)) { renderAll(); saveGame(); showToast("已出租。"); }
+  else showToast("無法出租。");
+}
+
+function handleStopRentOut(houseId) {
+  if (stopRentOut(houseId)) { renderAll(); saveGame(); showToast("已收回。"); }
+}
+
+function handleRentHouse(houseId) {
+  if (S.ownedHouses.includes(houseId)) { showToast("你已擁有此屋。"); return; }
+  if (rentHouse(houseId)) { renderAll(); saveGame(); showToast("已租下。"); }
+  else showToast("無法租下。");
 }
 
 function toggleDistrict(id) {
@@ -238,6 +268,7 @@ function doResetGame() {
   renderAll();
   switchTab("story");
   showToast("已重新開始。");
+  if (typeof maybePromptDayMode === "function") maybePromptDayMode();
 }
 
 /* ---------- API 設定 ---------- */
@@ -247,6 +278,7 @@ function openApiModal() {
   const u = $("api-url"); if (u) u.value = cfg.url || "";
   const m = $("api-model"); if (m) m.value = cfg.model || "";
   const th = $("api-thinking"); if (th) th.checked = !!cfg.thinking;
+  const st = $("api-showtokens"); if (st) st.checked = !!cfg.showTokens;
 
   const temp = (cfg.temperature != null && cfg.temperature !== "") ? cfg.temperature : 0.9;
   const topp = (cfg.topP != null && cfg.topP !== "") ? cfg.topP : 1.0;
@@ -268,6 +300,7 @@ function readApiForm() {
     url: g("api-url"),
     model: g("api-model"),
     thinking: chk("api-thinking"),
+    showTokens: chk("api-showtokens"),
     temperature: g("api-temperature") || "0.9",
     topP: g("api-topp") || "1.0"
   };

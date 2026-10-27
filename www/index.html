@@ -24,6 +24,7 @@
         <div class="story-input">
           <input id="story-input-field" type="text" placeholder="你想對她做什麼、說些什麼……" autocomplete="off">
           <button id="btn-send" class="btn btn-accent">送出</button>
+          <button id="btn-compress" class="btn">壓縮劇情</button>
         </div>
       </section>
 
@@ -83,6 +84,25 @@
       <button class="nav-btn" data-tab="inventory">背包</button>
       <button class="nav-btn" data-tab="property">房產</button>
     </nav>
+  </div>
+
+  <!-- 今日模式視窗 -->
+  <div id="modal-daymode" class="modal-overlay">
+    <div class="modal-dialog modal-dialog-sm">
+      <div class="modal-head"><h2>今日安排</h2></div>
+      <div id="daymode-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 出門隊伍視窗 -->
+  <div id="modal-party" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h2>帶誰出門</h2>
+        <button class="modal-close" data-close="modal-party">×</button>
+      </div>
+      <div id="party-body" class="modal-body"></div>
+    </div>
   </div>
 
   <!-- 市場視窗 -->
@@ -198,6 +218,13 @@
           <label for="api-thinking">深度思考</label>
           <label class="switch">
             <input id="api-thinking" type="checkbox">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="field-row">
+          <label for="api-showtokens">顯示 token 用量</label>
+          <label class="switch">
+            <input id="api-showtokens" type="checkbox" checked>
             <span class="slider"></span>
           </label>
         </div>

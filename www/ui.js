@@ -82,9 +82,27 @@ function appendStoryMessage(type, text) {
   log.scrollTop = log.scrollHeight;
 }
 
+function appendTokenNote() {
+  if (typeof showTokensEnabled !== "function" || !showTokensEnabled()) return;
+  const u = S.lastUsage;
+  if (!u) return;
+  pushLog("token", `↑輸入 ${u.prompt} token　↓輸出 ${u.completion} token`);
+  const log = document.getElementById("story-log");
+  if (!log) return;
+  const el = document.createElement("div");
+  el.className = "msg msg-token";
+  el.style.cssText = "font-size:10.5px;color:#A4938A;opacity:.85;margin-top:2px";
+  el.textContent = `↑輸入 ${u.prompt} token　↓輸出 ${u.completion} token`;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
 function renderStoryLog() {
   const log = document.getElementById("story-log");
-  log.innerHTML = (S.logs || []).map(l => `<div class="msg msg-${l.type}">${escapeHtml(l.text)}</div>`).join("");
+  log.innerHTML = (S.logs || []).map(l => {
+    if (l.type === "token") return `<div class="msg msg-token" style="font-size:10.5px;color:#A4938A;opacity:.85;margin-top:2px">${escapeHtml(l.text)}</div>`;
+    return `<div class="msg msg-${l.type}">${escapeHtml(l.text)}</div>`;
+  }).join("");
   log.scrollTop = log.scrollHeight;
 }
 
@@ -196,12 +214,13 @@ function openSuccubusDetail(id) {
       <div class="row"><b>${escapeHtml(s.name)}</b>　${gradeBadge(g)}　<span class="tag ${perm ? "tag-safe" : "tag-muted"}">${perm ? "永久契約" : "暫時契約"}</span> ${presTag} ${riskTag}</div>
       <div class="row"><b>等級</b>　${g.grade} 級 · ${g.name}（綜合 ${score}）　${escapeHtml(g.desc)}</div>
       <div class="row"><b>種族</b>　${escapeHtml(s.raceName)}　${escapeHtml(s.raceDesc || "")}</div>
+      <div class="row"><b>食性</b>　${escapeHtml(s.foodDesc || "")}</div>
+      ${s.background ? `<div class="row"><b>來歷</b>　<span class="tag tag-muted">${escapeHtml(s.background)}</span></div>` : ""}
       <div class="row"><b>個性</b>　${escapeHtml(s.personalityName)}　${escapeHtml(s.personalityDesc || "")}</div>
       <div class="row"><b>說話風格</b>　${escapeHtml(s.speechStyle || "")}</div>
       <div class="row"><b>外貌</b>　${escapeHtml(s.appearance || "")}</div>
       <div class="row"><b>氣味</b>　${escapeHtml(s.scent || "")}</div>
       ${s.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(s.defect.name)}</span>　${escapeHtml(s.defect.desc || "")}</div>` : ""}
-      ${s.background ? `<div class="row"><b>來歷</b>　${escapeHtml(s.background)}</div>` : ""}
       ${succubusStatsHtml(s)}
       <div class="row"><button class="btn" onclick="openStatGuide()">屬性說明（六個數值怎麼加減）</button></div>
       <div class="row" style="margin-top:6px"><b>配件</b>　${gearStatusTag(s)}</div>
@@ -219,7 +238,6 @@ function doUnequipGear(sucId, kind) {
   if (unequipGear(sucId, kind)) { saveGame(); openSuccubusDetail(sucId); renderAll(); showToast("已卸下。"); }
 }
 
-/* ---------- 屬性說明 ---------- */
 function openStatGuide() {
   const body = document.getElementById("help-body");
   if (!body) return;
@@ -233,6 +251,33 @@ function openStatGuide() {
       綜合等級（S~F）＝ 平均(魅惑, 服從, 體能)。等級越高，賣價越高；拍賣會只收 A／S 級。
     </div>`;
   openModal("modal-help");
+}
+
+/* ---------- 今日模式 ---------- */
+function openDayModeModal() {
+  document.getElementById("daymode-body").innerHTML = `
+    <div class="market-intro">第 ${S.day} 日，你要怎麼度過？</div>
+    <button class="btn" onclick="setDayMode('training')">訓練日 <span class="tag tag-muted">以調教、訓練為主</span></button>
+    <button class="btn" onclick="setDayMode('rest')">休息日 <span class="tag tag-safe">出門、逛街、旅遊</span></button>`;
+  openModal("modal-daymode");
+}
+
+function openPartyModal() {
+  const checkboxes = S.succubi.map(s => `<label class="field-row" style="cursor:pointer"><input type="checkbox" class="party-chk" value="${s.id}"> ${escapeHtml(s.name)}</label>`).join("");
+  document.getElementById("party-body").innerHTML = `
+    <div class="market-intro">休息日，要帶誰出門？（可複選；都不勾＝獨自出門）</div>
+    ${checkboxes}
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-party')">再想想</button>
+      <button class="btn btn-accent" onclick="confirmParty()">確認出發</button>
+    </div>`;
+  openModal("modal-party");
+}
+
+function confirmParty() {
+  const ids = Array.from(document.querySelectorAll(".party-chk:checked")).map(x => x.value);
+  closeModal("modal-party");
+  setParty(ids);
 }
 
 /* ---------- 背包 ---------- */
@@ -272,6 +317,48 @@ function renderInventory() {
 }
 
 /* ---------- 房產 ---------- */
+function houseRowHtml(h) {
+  const owned = S.ownedHouses.includes(h.id);
+  const rentedOut = (S.rentedOut || []).includes(h.id);
+  const isCurrent = S.currentHouseId === h.id;
+  const isRenting = isCurrent && !owned;
+  const price = housePrice(h.id);
+  const rent = dailyRent(h.id);
+  const rentIncome = dailyRentIncome(h.id);
+  const sell = sellHousePrice(h.id);
+  const updown = price > (h.price || 0) ? "▲" : (price < (h.price || 0) ? "▼" : "—");
+
+  let statusTag = "", actions = "";
+  if (isCurrent && owned) {
+    statusTag = '<span class="tag tag-safe">現居（自有）</span>';
+    actions = `<span style="font-size:12px;color:var(--ink-soft)">要販售或出租，請先遷往他處。</span>`;
+  } else if (isRenting) {
+    statusTag = '<span class="tag tag-muted">承租中</span>';
+    actions = `<span style="font-size:12px;color:var(--ink-soft)">日租 ${rent} 金（每日結算）</span>`;
+  } else if (owned && rentedOut) {
+    statusTag = '<span class="tag tag-muted">自有（出租中）</span>';
+    actions = `<button class="btn" onclick="handleStopRentOut('${h.id}')">收回</button>`;
+  } else if (owned) {
+    statusTag = '<span class="tag tag-safe">自有</span>';
+    actions = `<button class="btn" onclick="handleMoveHouse('${h.id}')">遷入</button>
+      <button class="btn" onclick="handleRentOutHouse('${h.id}')">出租（+${rentIncome}金/日）</button>
+      <button class="btn btn-danger" onclick="handleSellHouse('${h.id}')">販售（${sell}金）</button>`;
+  } else {
+    statusTag = '<span class="tag tag-muted">待售</span>';
+    actions = `<button class="btn btn-accent" onclick="handleBuyHouse('${h.id}')">購入（${price}金）</button>
+      <button class="btn" onclick="handleRentHouse('${h.id}')">租下（${rent}金/日）</button>`;
+  }
+
+  return `<div class="house-row">
+    <div class="info">
+      <div class="name">${escapeHtml(h.name)} ${statusTag}</div>
+      <div class="desc">${escapeHtml(h.desc)}</div>
+      <div class="desc" style="font-size:11.5px;color:var(--ink-soft)">今日房價 ${price} 金 ${updown}</div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px">${actions}</div>
+  </div>`;
+}
+
 function renderProperty() {
   const box = document.getElementById("property-list");
   box.innerHTML = DISTRICTS.map(d => {
@@ -288,14 +375,7 @@ function renderProperty() {
       <div class="district-body">
         ${locked
           ? `<div style="font-size:12.5px;color:var(--ink-soft)">你的名望尚不足以踏足此地，需晉升至【${getRank(rankReq).name}】。</div>`
-          : d.houses.map(h => {
-              const owned = S.ownedHouses.includes(h.id);
-              const current = S.currentHouseId === h.id;
-              return `<div class="house-row">
-                <div class="info"><div class="name">${escapeHtml(h.name)} ${current ? '<span class="tag tag-safe">現居</span>' : ""}</div><div class="desc">${escapeHtml(h.desc)}</div></div>
-                ${current ? "" : owned ? `<button class="btn" onclick="handleMoveHouse('${h.id}')">遷入</button>` : `<button class="btn btn-accent" onclick="handleBuyHouse('${h.id}')">${h.price} 金 購入</button>`}
-              </div>`;
-            }).join("")}
+          : d.houses.map(h => houseRowHtml(h)).join("")}
       </div>
     </div>`;
   }).join("");
@@ -328,8 +408,8 @@ function renderMarket() {
       return `
       <div class="market-card ${info.type}" onclick="inspectCandidate('${c.id}')">
         <div class="top"><span class="name">${escapeHtml(c.name)}　${gradeBadge(g)}</span><span class="price">${c.price} 金</span></div>
-        <div class="meta">${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)} · <span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
-        <div class="background">${escapeHtml(c.background)}</div>
+        <div class="meta">${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)} · ${c.background ? escapeHtml(c.background) : ""} · <span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
+        <div class="background">食性：${escapeHtml(c.foodDesc || c.raceDesc || "")}</div>
       </div>`;
     }).join("")}`;
   openModal("modal-market");
@@ -345,9 +425,10 @@ function renderCandidateDetail(c) {
       <div class="row"><b>外貌</b>　${escapeHtml(c.appearance)}</div>
       <div class="row"><b>氣味</b>　${escapeHtml(c.scent)}</div>
       <div class="row"><b>種族</b>　${escapeHtml(c.raceName)}　${escapeHtml(c.raceDesc)}</div>
+      <div class="row"><b>食性</b>　${escapeHtml(c.foodDesc || "")}</div>
       <div class="row"><b>個性</b>　${escapeHtml(c.personalityName)}　${escapeHtml(c.personalityDesc)}</div>
       ${c.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(c.defect.name)}</span>　${escapeHtml(c.defect.desc)}</div>` : ""}
-      <div class="row"><b>來歷</b>　${escapeHtml(c.background)}</div>
+      ${c.background ? `<div class="row"><b>來歷</b>　<span class="tag tag-muted">${escapeHtml(c.background)}</span></div>` : ""}
       <div class="row"><b>潛質</b>　好感${seed.affection || 0}　服從${seed.obedience || 0}　魅惑${seed.charm || 0}　體能${seed.stamina || 0}　壓力${seed.stress || 0}　飢餓${seed.hunger || 0}</div>
       <div class="row"><b>價格</b>　${c.price} 金</div>
       <button class="btn btn-accent" onclick="showConfirm('${c.id}')">決定購買</button>

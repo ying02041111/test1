@@ -24,6 +24,23 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: 還原固定簽章（讓 APK 可覆蓋安裝，存檔沿用）
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      - name: 若無簽章則生成（僅第一次）
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
@@ -49,15 +66,9 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Check APK Location
-        run: |
-          echo "=== 尋找生成的 APK 檔案 ==="
-          find android/ -name "*.apk"
-
       - name: Upload APK
         uses: actions/upload-artifact@v5
         with:
           name: crimson-night-apk
           path: android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
-

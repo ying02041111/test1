@@ -124,6 +124,8 @@ function renderMaster() {
   document.getElementById("master-style").innerHTML = MASTER_STYLES
     .map(s => `<option value="${s.id}" ${s.id === m.style ? "selected" : ""}>${s.name} — ${s.desc}</option>`).join("");
   document.getElementById("master-persona").value = m.persona || "";
+  document.getElementById("master-diet").innerHTML = (DIET_OPTIONS || []).map(d =>
+    `<option value="${d.id}" ${d.id === m.diet ? "selected" : ""}>${d.name}（${d.cost}金/日，回體+${d.hpRecover}）</option>`).join("");
 }
 
 function statItem(label, val, cls, max, color) {
@@ -140,12 +142,17 @@ function gradeBadge(g) {
   return `<span style="display:inline-block;padding:1px 7px;border-radius:8px;font-size:11px;font-weight:700;background:#775C56;color:#F8F4E8">${g.grade}級·${g.name}</span>`;
 }
 
+function genderTag(s) {
+  const male = s.gender === "男";
+  return `<span style="display:inline-block;padding:1px 6px;border-radius:999px;font-size:10.5px;font-weight:700;${male ? "background:#9FC6D6;color:#2B4A58" : "background:#F3C6CE;color:#6B3544"}">${male ? "♂ 男" : "♀ 女"}</span>`;
+}
+
 function succubusStatsHtml(s) {
   return `<div class="stat-grid">
-    ${statItem("好感", s.affection, "bar-affection", 300)}
-    ${statItem("服從", s.obedience, "bar-obedience", 300)}
-    ${statItem("魅惑", s.charm, "bar-charm", 300, "#E39BB6")}
-    ${statItem("體能", s.stamina, "bar-stamina", 300, "#8FC7B8")}
+    ${statItem("好感", s.affection, "bar-affection", 200)}
+    ${statItem("服從", s.obedience, "bar-obedience", 200)}
+    ${statItem("魅惑", s.charm, "bar-charm", 200, "#E39BB6")}
+    ${statItem("體能", s.stamina, "bar-stamina", 200, "#8FC7B8")}
     ${statItem("壓力", s.stress, "bar-stress", 100)}
     ${statItem("飢餓", s.hunger, "bar-hunger", 100)}
   </div>`;
@@ -172,7 +179,7 @@ function renderSuccubi() {
       <div class="succubus-top">
         <div class="avatar">${escapeHtml(s.name.charAt(0))}</div>
         <div>
-          <div class="succubus-name">${escapeHtml(s.name)} ${gradeBadge(g)} ${perm ? '<span class="tag tag-safe">永久契約</span>' : '<span class="tag tag-muted">暫時契約</span>'} ${presTag}</div>
+          <div class="succubus-name">${escapeHtml(s.name)} ${genderTag(s)} ${gradeBadge(g)} ${perm ? '<span class="tag tag-safe">永久契約</span>' : '<span class="tag tag-muted">暫時契約</span>'} ${presTag}</div>
           <div class="succubus-sub">${escapeHtml(s.raceName)} · ${escapeHtml(s.personalityName)} ${defTag} ${gearStatusTag(s)}</div>
         </div>
       </div>
@@ -209,14 +216,16 @@ function openSuccubusDetail(id) {
   const score = succubusGradeScore(s);
   const riskTag = s.risk ? `<span class="tag ${s.risk === "低風險" ? "tag-safe" : "tag-risk"}">${s.risk}</span>` : "";
   const presTag = s.present ? '<span class="tag tag-safe">在身邊</span>' : `<span class="tag tag-muted">不在${s.place ? "・" + escapeHtml(s.place) : ""}</span>`;
+  const facets = (s.facets && s.facets.length) ? s.facets.join("；") : "";
   document.getElementById("succubus-body").innerHTML = `
     <div class="candidate-detail">
-      <div class="row"><b>${escapeHtml(s.name)}</b>　${gradeBadge(g)}　<span class="tag ${perm ? "tag-safe" : "tag-muted"}">${perm ? "永久契約" : "暫時契約"}</span> ${presTag} ${riskTag}</div>
+      <div class="row"><b>${escapeHtml(s.name)}</b>　${genderTag(s)}　${gradeBadge(g)}　<span class="tag ${perm ? "tag-safe" : "tag-muted"}">${perm ? "永久契約" : "暫時契約"}</span> ${presTag} ${riskTag}</div>
       <div class="row"><b>等級</b>　${g.grade} 級 · ${g.name}（綜合 ${score}）　${escapeHtml(g.desc)}</div>
       <div class="row"><b>種族</b>　${escapeHtml(s.raceName)}　${escapeHtml(s.raceDesc || "")}</div>
       <div class="row"><b>食性</b>　${escapeHtml(s.foodDesc || "")}</div>
       ${s.background ? `<div class="row"><b>來歷</b>　<span class="tag tag-muted">${escapeHtml(s.background)}</span></div>` : ""}
       <div class="row"><b>個性</b>　${escapeHtml(s.personalityName)}　${escapeHtml(s.personalityDesc || "")}</div>
+      ${facets ? `<div class="row"><b>性格側寫</b>　${escapeHtml(facets)}</div>` : ""}
       <div class="row"><b>說話風格</b>　${escapeHtml(s.speechStyle || "")}</div>
       <div class="row"><b>外貌</b>　${escapeHtml(s.appearance || "")}</div>
       <div class="row"><b>氣味</b>　${escapeHtml(s.scent || "")}</div>
@@ -253,7 +262,6 @@ function openStatGuide() {
   openModal("modal-help");
 }
 
-/* ---------- 今日模式 ---------- */
 function openDayModeModal() {
   document.getElementById("daymode-body").innerHTML = `
     <div class="market-intro">第 ${S.day} 日，你要怎麼度過？</div>
@@ -263,7 +271,7 @@ function openDayModeModal() {
 }
 
 function openPartyModal() {
-  const checkboxes = S.succubi.map(s => `<label class="field-row" style="cursor:pointer"><input type="checkbox" class="party-chk" value="${s.id}"> ${escapeHtml(s.name)}</label>`).join("");
+  const checkboxes = S.succubi.map(s => `<label class="field-row" style="cursor:pointer"><input type="checkbox" class="party-chk" value="${s.id}"> ${escapeHtml(s.name)}（${escapeHtml(s.gender === "男" ? "男" : "女")}）</label>`).join("");
   document.getElementById("party-body").innerHTML = `
     <div class="market-intro">休息日，要帶誰出門？（可複選；都不勾＝獨自出門）</div>
     ${checkboxes}
@@ -280,7 +288,6 @@ function confirmParty() {
   setParty(ids);
 }
 
-/* ---------- 背包 ---------- */
 function renderInventory() {
   const box = document.getElementById("inventory-list");
   const counts = {};
@@ -316,7 +323,6 @@ function renderInventory() {
   box.innerHTML = itemHtml + (gearHtml ? `<div class="panel-head" style="margin-top:8px"><b>配件</b></div>${gearHtml}` : "");
 }
 
-/* ---------- 房產 ---------- */
 function houseRowHtml(h) {
   const owned = S.ownedHouses.includes(h.id);
   const rentedOut = (S.rentedOut || []).includes(h.id);
@@ -326,6 +332,7 @@ function houseRowHtml(h) {
   const rent = dailyRent(h.id);
   const rentIncome = dailyRentIncome(h.id);
   const sell = sellHousePrice(h.id);
+  const cap = h.capacity || 1;
   const updown = price > (h.price || 0) ? "▲" : (price < (h.price || 0) ? "▼" : "—");
 
   let statusTag = "", actions = "";
@@ -341,21 +348,21 @@ function houseRowHtml(h) {
   } else if (owned) {
     statusTag = '<span class="tag tag-safe">自有</span>';
     actions = `<button class="btn" onclick="handleMoveHouse('${h.id}')">遷入</button>
-      <button class="btn" onclick="handleRentOutHouse('${h.id}')">出租（+${rentIncome}金/日）</button>
-      <button class="btn btn-danger" onclick="handleSellHouse('${h.id}')">販售（${sell}金）</button>`;
+      <button class="btn" onclick="handleRentOutHouse('${h.id}')">出租 +${rentIncome}/日</button>
+      <button class="btn btn-danger" onclick="handleSellHouse('${h.id}')">販售 ${sell}金</button>`;
   } else {
     statusTag = '<span class="tag tag-muted">待售</span>';
-    actions = `<button class="btn btn-accent" onclick="handleBuyHouse('${h.id}')">購入（${price}金）</button>
-      <button class="btn" onclick="handleRentHouse('${h.id}')">租下（${rent}金/日）</button>`;
+    actions = `<button class="btn btn-accent" onclick="handleBuyHouse('${h.id}')">購入 ${price}金</button>
+      <button class="btn" onclick="handleRentHouse('${h.id}')">租下 ${rent}/日</button>`;
   }
 
   return `<div class="house-row">
     <div class="info">
       <div class="name">${escapeHtml(h.name)} ${statusTag}</div>
       <div class="desc">${escapeHtml(h.desc)}</div>
-      <div class="desc" style="font-size:11.5px;color:var(--ink-soft)">今日房價 ${price} 金 ${updown}</div>
+      <div class="house-price">容量 ${cap} 隻　今日房價 ${price} 金 ${updown}</div>
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:4px">${actions}</div>
+    <div class="house-actions">${actions}</div>
   </div>`;
 }
 
@@ -381,7 +388,6 @@ function renderProperty() {
   }).join("");
 }
 
-/* ---------- 市場 ---------- */
 function openMarketChoiceModal() {
   document.getElementById("market-title").textContent = "緋夜市場";
   const hasSuc = !!S.hasPurchased;
@@ -408,7 +414,7 @@ function renderMarket() {
       return `
       <div class="market-card ${info.type}" onclick="inspectCandidate('${c.id}')">
         <div class="top"><span class="name">${escapeHtml(c.name)}　${gradeBadge(g)}</span><span class="price">${c.price} 金</span></div>
-        <div class="meta">${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)} · ${c.background ? escapeHtml(c.background) : ""} · <span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
+        <div class="meta">${c.gender === "男" ? "♂ 男" : "♀ 女"} · ${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)} · ${escapeHtml(c.background || "")} · <span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
         <div class="background">食性：${escapeHtml(c.foodDesc || c.raceDesc || "")}</div>
       </div>`;
     }).join("")}`;
@@ -421,12 +427,13 @@ function renderCandidateDetail(c) {
   const seed = c.statSeed || {};
   body.innerHTML = `
     <div class="candidate-detail">
-      <div class="row"><b>${escapeHtml(c.name)}</b>　${gradeBadge(g)}　<span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
+      <div class="row"><b>${escapeHtml(c.name)}</b>　${c.gender === "男" ? "♂ 男" : "♀ 女"}　${gradeBadge(g)}　<span class="tag ${c.risk === "低風險" ? "tag-safe" : "tag-risk"}">${c.risk}</span></div>
       <div class="row"><b>外貌</b>　${escapeHtml(c.appearance)}</div>
       <div class="row"><b>氣味</b>　${escapeHtml(c.scent)}</div>
       <div class="row"><b>種族</b>　${escapeHtml(c.raceName)}　${escapeHtml(c.raceDesc)}</div>
       <div class="row"><b>食性</b>　${escapeHtml(c.foodDesc || "")}</div>
       <div class="row"><b>個性</b>　${escapeHtml(c.personalityName)}　${escapeHtml(c.personalityDesc)}</div>
+      ${(c.facets && c.facets.length) ? `<div class="row"><b>性格側寫</b>　${escapeHtml(c.facets.join("；"))}</div>` : ""}
       ${c.defect ? `<div class="row"><b>缺陷</b>　<span class="tag tag-risk">${escapeHtml(c.defect.name)}</span>　${escapeHtml(c.defect.desc)}</div>` : ""}
       ${c.background ? `<div class="row"><b>來歷</b>　<span class="tag tag-muted">${escapeHtml(c.background)}</span></div>` : ""}
       <div class="row"><b>潛質</b>　好感${seed.affection || 0}　服從${seed.obedience || 0}　魅惑${seed.charm || 0}　體能${seed.stamina || 0}　壓力${seed.stress || 0}　飢餓${seed.hunger || 0}</div>
@@ -439,7 +446,7 @@ function renderCandidateDetail(c) {
 function showConfirmModal(c) {
   document.getElementById("confirm-title").textContent = "契約確認";
   document.getElementById("confirm-body").innerHTML = `
-    <p style="font-size:14px">你確定要以 <b style="color:var(--accent-warn)">${c.price} 金</b> 簽下 ${escapeHtml(c.name)} 嗎？</p>
+    <p style="font-size:14px">你確定要以 <b style="color:var(--accent-warn)">${c.price} 金</b> 簽下 ${escapeHtml(c.name)}（${c.gender === "男" ? "男" : "女"}）嗎？</p>
     <p style="font-size:12.5px;color:var(--ink-soft)">${escapeHtml(c.risk)} · ${escapeHtml(c.raceName)} · ${escapeHtml(c.personalityName)}</p>`;
   document.getElementById("confirm-actions").innerHTML = `
     <button class="btn" onclick="closeModal('modal-confirm')">再想想</button>
@@ -447,7 +454,6 @@ function showConfirmModal(c) {
   openModal("modal-confirm");
 }
 
-/* ---------- 道具商店 ---------- */
 let currentShopType = "official";
 
 function openShopChoice() {
@@ -505,16 +511,15 @@ function handleBuyItem(itemId) {
   }
 }
 
-/* ---------- 項圈／牽引繩商店 ---------- */
 let currentCollarShopType = "official";
 
 function openCollarShopChoice() {
   document.getElementById("collar-title").textContent = "項圈商店";
   document.getElementById("collar-body").innerHTML = `
-    <div class="market-intro">牽引她，需要一副合適的項圈與牽繩。</div>
+    <div class="market-intro">牽引他（她），需要一副合適的項圈與牽繩。</div>
     <button class="btn" onclick="openCollarShop('official')">官方項圈行 <span class="tag tag-safe">正規 · 皮匠與銀匠</span></button>
     <button class="btn" onclick="openCollarShop('blackmarket')">暗巷禁具鋪 <span class="tag tag-risk">違禁 · 禁忌款</span></button>
-    <p style="font-size:12.5px;color:var(--ink-soft)">購買後，請到「魅魔 → 點擊角色 → 配件」為她配戴。一隻魅魔需 1 個項圈 + 1 條牽引繩才能成套牽引，多隻魅魔請多備幾套。</p>`;
+    <p style="font-size:12.5px;color:var(--ink-soft)">購買後，請到「魅魔 → 點擊角色 → 配件」配戴。一隻需 1 個項圈 + 1 條牽引繩才能成套牽引，多隻請多備幾套。</p>`;
   openModal("modal-collar");
 }
 
@@ -562,11 +567,10 @@ function handleBuyGear(gearId) {
   }
 }
 
-/* ---------- 出售 ---------- */
 function openSellFlow(succubusId) {
   const suc = getSuccubus(succubusId);
   if (!suc) return;
-  if (suc.contract === "permanent") { showToast("她已締下永久之契，不能再轉讓。"); return; }
+  if (suc.contract === "permanent") { showToast("已締下永久之契，不能再轉讓。"); return; }
   const g = succubusGrade(suc);
   document.getElementById("sell-title").textContent = "契約轉讓 · " + suc.name + "（" + g.grade + "級）";
   document.getElementById("sell-body").innerHTML = `
@@ -624,14 +628,13 @@ function acceptSell() {
 
 function refuseSell() {
   if (S.sellState && S.sellState.weird) {
-    pushLog("system", "你搖搖頭，攏緊了披風，牽著她離開那雙不安分的目光。");
+    pushLog("system", "你搖搖頭，攏緊了披風，牽著他（她）離開那雙不安分的目光。");
   }
   S.sellState = null;
   closeModal("modal-sell");
   renderAll();
 }
 
-/* ---------- 永久契約 ---------- */
 function openContractFlow(succubusId) {
   const suc = getSuccubus(succubusId);
   if (!suc) return;

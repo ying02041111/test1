@@ -8,7 +8,7 @@ const DISTRICT_RANK = { oldtown: 1, lantern: 2, tower: 3, outskirt: 4 };
 
 function defaultState() {
   return {
-    master: { hp: 100, maxHp: 100, gold: 1000, exp: 0, rank: 1, style: "gentle", persona: "" },
+    master: { hp: 100, maxHp: 100, gold: 1000, exp: 0, rank: 1, style: "gentle", persona: "", diet: "normal" },
     day: 1,
     subPhase: 0,
     dayMode: "training",
@@ -141,17 +141,28 @@ function checkMasterRank() {
   }
 }
 
+function rollFacets() {
+  const arr = (typeof TRAIT_FACETS !== "undefined" ? TRAIT_FACETS : []).slice().sort(() => Math.random() - 0.5);
+  return arr.slice(0, 2);
+}
+
 function rollSuccubus(raceKey) {
   const race = RACES.find(r => r.key === raceKey) || pick(RACES);
-  const p = pick(PERSONALITIES), ap = pick(APPEARANCES), sc = pick(SCENTS);
+  const p = pick(PERSONALITIES);
+  const gender = Math.random() < 0.5 ? "男" : "女";
+  const ap = gender === "男" ? pick(MALE_APPEARANCES) : pick(APPEARANCES);
+  const sc = gender === "男" ? pick(MALE_SCENTS) : pick(SCENTS);
+  const name = gender === "男" ? pick(MALE_NAMES) : randomName();
   return {
     id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
-    name: randomName(),
+    name: name,
+    gender: gender,
     raceKey: race.key, raceName: race.name, raceDesc: race.desc,
     foodDesc: race.foodDesc || "",
     appearance: ap, scent: sc,
     personality: p.id, personalityName: p.name, personalityDesc: p.desc,
     speechStyle: p.speech || "",
+    facets: rollFacets(),
     defect: null,
     affection: 5, obedience: 10, charm: 5, stamina: 8, stress: 10, hunger: 25,
     origin: "roll", background: "", risk: null,
@@ -177,7 +188,6 @@ function triggerDailySettlement() {
   let permIncome = 0;
   let hpCost = 0, goldCost = 0, starveCount = 0;
 
-  // 新的一天：大家回到家中，尚未決定今日模式
   S.succubi.forEach(s => { s.present = true; s.place = ""; });
   S.dayMode = null;
   S.needDayChoice = true;
@@ -199,7 +209,6 @@ function triggerDailySettlement() {
       permIncome += 15;
     }
 
-    // 依種族餵食
     const race = RACES.find(r => r.key === s.raceKey);
     const feed = (race && race.feed) ? race.feed : { type: "gold", cost: 20 };
     let fed = false;
@@ -217,13 +226,23 @@ function triggerDailySettlement() {
   if (goldCost > 0) msg += ` 你為魅魔張羅吃食，花去 ${goldCost} 金。`;
   if (starveCount > 0) msg += ` 有 ${starveCount} 隻魅魔沒能吃飽，正餓著。`;
 
+  // 自己的吃食＋過夜回復
+  const diet = DIET_OPTIONS.find(x => x.id === S.master.diet) || DIET_OPTIONS[1];
+  const pay = Math.min(diet.cost, S.master.gold);
+  S.master.gold -= pay;
+  const recover = Math.round(diet.hpRecover * (diet.cost ? pay / diet.cost : 1));
+  S.master.hp = clamp(S.master.hp + recover, 0, S.master.maxHp);
+  msg += pay < diet.cost
+    ? ` 你手頭緊，只為自己張羅了 ${pay}/${diet.cost} 金的吃食；一夜休息，體力回復 ${recover}。`
+    : ` 你為自己張羅吃食，花去 ${diet.cost} 金；一夜休息，體力回復 ${recover}。`;
+
   // 房產結算
   fluctuateHousePrices();
   if (!S.ownedHouses.includes(S.currentHouseId)) {
     const rent = dailyRent(S.currentHouseId);
     const paid = Math.min(rent, S.master.gold);
     S.master.gold -= paid;
-    msg += paid < rent ? ` 你只付得起 ${paid}/${rent} 金房租，拖欠了一部分。` : ` 你為住處支付租金 ${rent} 金。`;
+    msg += paid < rent ? ` 你只付得起 ${paid}/${rent} 金房租。` : ` 你為住處支付租金 ${rent} 金。`;
   }
   let rentIncome = 0;
   for (const id of (S.rentedOut || [])) rentIncome += dailyRentIncome(id);
@@ -236,7 +255,6 @@ function triggerDailySettlement() {
   else pushLog("system", `你名下的產業為你帶來 ${income} 金的進帳。`);
 }
 
-/* ---------- 今日模式 ---------- */
 function maybePromptDayMode() {
   if (S.needDayChoice && typeof openDayModeModal === "function") openDayModeModal();
 }
@@ -262,11 +280,10 @@ function setParty(ids) {
     s.place = s.present ? "" : "房裡";
   });
   const names = S.party.map(id => (getSuccubus(id) || {}).name).filter(Boolean);
-  pushLog("system", names.length ? `你帶著 ${names.join("、")} 出門。` : "你獨自出門，把她們留在了房裡。");
+  pushLog("system", names.length ? `你帶著 ${names.join("、")} 出門。` : "你獨自出門，把他們留在了房裡。");
   if (typeof renderAll === "function") renderAll();
 }
 
-/* ---------- 房產價格與租賃 ---------- */
 function housePrice(id) {
   if (!S.housePrices) S.housePrices = {};
   if (S.housePrices[id] == null) S.housePrices[id] = (getHouse(id) || {}).price || 0;
@@ -286,6 +303,19 @@ function fluctuateHousePrices() {
 function dailyRent(id) { return Math.max(5, Math.round(housePrice(id) * 0.007)); }
 function dailyRentIncome(id) { return Math.max(3, Math.round(housePrice(id) * 0.005)); }
 function sellHousePrice(id) { return Math.max(40, Math.round(housePrice(id) * 0.9)); }
+
+function totalHousingCapacity() {
+  let cap = 0;
+  const seen = {};
+  for (const id of S.ownedHouses) {
+    if ((S.rentedOut || []).includes(id)) continue;
+    const h = getHouse(id); if (h) { cap += (h.capacity || 1); seen[id] = 1; }
+  }
+  if (!S.ownedHouses.includes(S.currentHouseId)) {
+    const h = getHouse(S.currentHouseId); if (h && !seen[S.currentHouseId]) cap += (h.capacity || 1);
+  }
+  return Math.max(0, cap);
+}
 
 function rentHouse(houseId) {
   const h = getHouse(houseId);
@@ -336,7 +366,11 @@ function generateMarketCandidates(type) {
 
 function generateOneCandidate(type, idx) {
   const isOfficial = type === "official";
-  const race = pick(RACES), p = pick(PERSONALITIES), ap = pick(APPEARANCES), sc = pick(SCENTS);
+  const race = pick(RACES), p = pick(PERSONALITIES);
+  const gender = Math.random() < 0.5 ? "男" : "女";
+  const ap = gender === "男" ? pick(MALE_APPEARANCES) : pick(APPEARANCES);
+  const sc = gender === "男" ? pick(MALE_SCENTS) : pick(SCENTS);
+  const name = gender === "男" ? pick(MALE_NAMES) : randomName();
   let defect = null, background = "", price = 0;
 
   if (isOfficial) {
@@ -352,12 +386,14 @@ function generateOneCandidate(type, idx) {
 
   return {
     id: "cand_" + type + "_" + idx + "_" + Math.floor(Math.random() * 10000),
-    name: randomName(),
+    name: name,
+    gender: gender,
     raceKey: race.key, raceName: race.name, raceDesc: race.desc,
     foodDesc: race.foodDesc || "",
     appearance: ap, scent: sc,
     personality: p.id, personalityName: p.name, personalityDesc: p.desc,
     speechStyle: p.speech || "",
+    facets: rollFacets(),
     defect: defect, background: background, price: price,
     risk: isOfficial ? "低風險" : "高風險",
     statSeed: {
@@ -412,6 +448,12 @@ function confirmPurchase() {
   const c = S.market.candidates.find(x => x.id === S.market.selectedId);
   if (!c) return;
   const type = S.market.type;
+
+  if (S.succubi.length >= totalHousingCapacity()) {
+    pushLog("system", "你的住處已無空位，無法再收容新的魅魔。請先購入或租下更大的房產。");
+    if (typeof renderMarket === "function") renderMarket();
+    return;
+  }
   if (S.master.gold < c.price) {
     pushLog("system", `你的錢袋不夠沉，還差 ${c.price - S.master.gold} 金。`);
     if (typeof renderMarket === "function") renderMarket();
@@ -421,11 +463,13 @@ function confirmPurchase() {
   const suc = {
     id: "suc_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
     name: c.name,
+    gender: c.gender || "女",
     raceKey: c.raceKey, raceName: c.raceName, raceDesc: c.raceDesc,
     foodDesc: c.foodDesc || "",
     appearance: c.appearance, scent: c.scent,
     personality: c.personality, personalityName: c.personalityName, personalityDesc: c.personalityDesc,
     speechStyle: c.speechStyle || "",
+    facets: c.facets || [],
     defect: c.defect, background: c.background, risk: c.risk,
     origin: c.risk === "低風險" ? "official" : "blackmarket",
     affection: c.statSeed.affection, obedience: c.statSeed.obedience,
@@ -475,7 +519,7 @@ function auctionPrice(suc) { return Math.round(officialPrice(suc) * (1.8 + Math.
 function prepareSell(succubusId, channel) {
   const suc = getSuccubus(succubusId);
   if (!suc) return null;
-  if (suc.contract === "permanent") { pushLog("system", "她已與你締下永久之契，不能再被轉讓。"); return null; }
+  if (suc.contract === "permanent") { pushLog("system", "已締下永久之契，不能再被轉讓。"); return null; }
 
   S.sellState = { succubusId, channel, weird: null, price: 0 };
 
@@ -489,11 +533,11 @@ function prepareSell(succubusId, channel) {
       S.sellState.price = Math.max(120, Math.round(S.sellState.price * w.priceMult));
     }
   } else if (channel === "auction") {
-    if (!isHighDistrict(S.currentDistrictId)) { pushLog("system", "拍賣會只在高等街區舉辦，緋夜舊城沒有這等燈海。"); S.sellState = null; return null; }
+    if (!isHighDistrict(S.currentDistrictId)) { pushLog("system", "拍賣會只在高等街區舉辦。"); S.sellState = null; return null; }
     const g = succubusGrade(suc);
     const allow = (AUCTION_INFO.minGrade || ["A", "S"]);
     if (allow.indexOf(g.grade) === -1) {
-      pushLog("system", `拍賣會只收 ${allow.join("／")} 級的極品。她目前是 ${g.grade} 級（${g.name}），火候還不夠。`);
+      pushLog("system", `拍賣會只收 ${allow.join("／")} 級。目前是 ${g.grade} 級（${g.name}），火候還不夠。`);
       S.sellState = null;
       return null;
     }
@@ -531,9 +575,9 @@ function executeSell() {
 function signPermanentContract(succubusId) {
   const suc = getSuccubus(succubusId);
   if (!suc) return false;
-  if (suc.contract === "permanent") { pushLog("system", "她早已是你緋夜的一部分。"); return false; }
+  if (suc.contract === "permanent") { pushLog("system", "早已是你緋夜的一部分。"); return false; }
   if (suc.affection < CONTRACT_INFO.permanentAffectionReq) {
-    pushLog("system", `她的心意尚未抵達。永久之契需要好感達到 ${CONTRACT_INFO.permanentAffectionReq}。`);
+    pushLog("system", `心意尚未抵達。永久之契需要好感達到 ${CONTRACT_INFO.permanentAffectionReq}。`);
     return false;
   }
   if (S.master.gold < CONTRACT_INFO.permanentCost) {
@@ -544,7 +588,7 @@ function signPermanentContract(succubusId) {
   suc.contract = "permanent";
   suc.storyUnlocked = true;
   addMasterExp(40);
-  pushLog("system", `以血與吻烙下永久之契。${suc.name} 從此不再是可以易手的貨物，而是你緋夜的一部分。`);
+  pushLog("system", `以血與吻烙下永久之契。${suc.name} 從此不再是可以易手的貨物。`);
   return true;
 }
 
@@ -597,8 +641,8 @@ function consumeItemByStory(itemId, succubusId) {
 function useItemOnSuccubus(itemId, succubusId) { return consumeItemByStory(itemId, succubusId); }
 
 const SHOP_INFO = {
-  official:    { name: "官方道具行",     desc: "高塔區的官方道具行，明碼標價、童叟無欺。", riskLabel: "正規" },
-  blackmarket: { name: "暗巷黑市道具鋪", desc: "暗巷深處的祕密鋪子，只賣些見不得光的玩意。", riskLabel: "違禁" }
+  official:    { name: "官方道具行",     desc: "高塔區的官方道具行，明碼標價。", riskLabel: "正規" },
+  blackmarket: { name: "暗巷黑市道具鋪", desc: "暗巷深處的祕密鋪子。", riskLabel: "違禁" }
 };
 
 const SHOP_ITEM_SOURCE = {
@@ -621,36 +665,22 @@ function shopItems(type) { return ITEMS.filter(it => SHOP_ITEM_SOURCE[it.id] ===
 function buyItem(itemId) {
   const it = getItem(itemId);
   if (!it) return false;
-  if (S.master.gold < it.price) {
-    pushLog("system", `你的錢袋不夠沉，還差 ${it.price - S.master.gold} 金。`);
-    return false;
-  }
-  if (S.master.rank < it.rankReq) {
-    pushLog("system", `你的階級尚不足以駕馭「${it.name}」，需晉升至【${getRank(it.rankReq).name}】。`);
-    return false;
-  }
+  if (S.master.gold < it.price) { pushLog("system", `你的錢袋不夠沉，還差 ${it.price - S.master.gold} 金。`); return false; }
+  if (S.master.rank < it.rankReq) { pushLog("system", `你的階級尚不足以駕馭「${it.name}」。`); return false; }
   S.master.gold -= it.price;
   addItem(itemId);
   pushLog("system", `你購入了「${it.name}」。${it.desc}`);
   return true;
 }
 
-function collarShopItems(type) {
-  return [...COLLARS, ...LEASHES].filter(g => g.source === type);
-}
+function collarShopItems(type) { return [...COLLARS, ...LEASHES].filter(g => g.source === type); }
 
 function buyGear(gearId) {
   const g = getGearDef(gearId);
   if (!g) return false;
   if (!S.gear) S.gear = {};
-  if (S.master.gold < g.price) {
-    pushLog("system", `你的錢袋不夠沉，還差 ${g.price - S.master.gold} 金。`);
-    return false;
-  }
-  if (S.master.rank < (g.rankReq || 1)) {
-    pushLog("system", `你的階級尚不足以購入「${g.name}」，需晉升至【${getRank(g.rankReq || 1).name}】。`);
-    return false;
-  }
+  if (S.master.gold < g.price) { pushLog("system", `你的錢袋不夠沉，還差 ${g.price - S.master.gold} 金。`); return false; }
+  if (S.master.rank < (g.rankReq || 1)) { pushLog("system", `你的階級尚不足以購入「${g.name}」。`); return false; }
   S.master.gold -= g.price;
   S.gear[gearId] = (S.gear[gearId] || 0) + 1;
   pushLog("system", `你購入了「${g.name}」。${g.desc}`);
@@ -768,6 +798,43 @@ function pushLog(type, text) {
 
 const SAVE_KEY = "ck_save_v4";
 
+function applyLoadedState(parsed) {
+  const base = defaultState();
+  S = Object.assign(base, parsed);
+
+  S.market = { type: null, candidates: [], selectedId: null, cache: {} };
+  S.sellState = null;
+  if (!S.master || typeof S.master !== "object") S.master = base.master;
+  if (!S.master.diet) S.master.diet = "normal";
+  S.succubi = Array.isArray(S.succubi) ? S.succubi : [];
+  S.succubi.forEach(s => {
+    if (typeof s.present !== "boolean") s.present = true;
+    if (typeof s.place !== "string") s.place = "";
+    if (typeof s.charm !== "number") s.charm = 0;
+    if (typeof s.stamina !== "number") s.stamina = 0;
+    if (typeof s.gender !== "string") s.gender = "女";
+    if (!Array.isArray(s.facets)) s.facets = [];
+    if (typeof s.collar !== "string") s.collar = "";
+    if (typeof s.leash !== "string") s.leash = "";
+    if (!s.speechStyle) { const p = PERSONALITIES.find(x => x.id === s.personality); s.speechStyle = p ? p.speech : ""; }
+  });
+  S.inventory = Array.isArray(S.inventory) ? S.inventory : [];
+  S.gear = (S.gear && typeof S.gear === "object") ? S.gear : {};
+  S.ownedHouses = Array.isArray(S.ownedHouses) ? S.ownedHouses : ["oldtown_loft"];
+  S.rentedOut = Array.isArray(S.rentedOut) ? S.rentedOut : [];
+  S.housePrices = (S.housePrices && typeof S.housePrices === "object") ? S.housePrices : {};
+  S.party = Array.isArray(S.party) ? S.party : [];
+  if (typeof S.dayMode !== "string" || !S.dayMode) S.dayMode = "training";
+  if (typeof S.needDayChoice !== "boolean") S.needDayChoice = false;
+  S.currentChoices = Array.isArray(S.currentChoices) ? S.currentChoices : [];
+  S.logs = Array.isArray(S.logs) ? S.logs : [];
+  S.facts = Array.isArray(S.facts) ? S.facts : [];
+  S.history = Array.isArray(S.history) ? S.history : [];
+  S.hasPurchased = !!S.hasPurchased || S.succubi.length > 0;
+  if (typeof S.day !== "number") S.day = 1;
+  if (typeof S.subPhase !== "number") S.subPhase = 0;
+}
+
 function saveGame() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); return true; }
   catch (e) { return false; }
@@ -777,42 +844,25 @@ function loadGame() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return false;
-    const parsed = JSON.parse(raw);
-    const base = defaultState();
-    S = Object.assign(base, parsed);
-
-    S.market = { type: null, candidates: [], selectedId: null, cache: {} };
-    S.sellState = null;
-    if (!S.master || typeof S.master !== "object") S.master = base.master;
-    S.succubi = Array.isArray(S.succubi) ? S.succubi : [];
-    S.succubi.forEach(s => {
-      if (typeof s.present !== "boolean") s.present = true;
-      if (typeof s.place !== "string") s.place = "";
-      if (typeof s.charm !== "number") s.charm = 0;
-      if (typeof s.stamina !== "number") s.stamina = 0;
-      if (typeof s.collar !== "string") s.collar = "";
-      if (typeof s.leash !== "string") s.leash = "";
-      if (!s.speechStyle) { const p = PERSONALITIES.find(x => x.id === s.personality); s.speechStyle = p ? p.speech : ""; }
-    });
-    S.inventory = Array.isArray(S.inventory) ? S.inventory : [];
-    S.gear = (S.gear && typeof S.gear === "object") ? S.gear : {};
-    S.ownedHouses = Array.isArray(S.ownedHouses) ? S.ownedHouses : ["oldtown_loft"];
-    S.rentedOut = Array.isArray(S.rentedOut) ? S.rentedOut : [];
-    S.housePrices = (S.housePrices && typeof S.housePrices === "object") ? S.housePrices : {};
-    S.party = Array.isArray(S.party) ? S.party : [];
-    if (typeof S.dayMode !== "string" || !S.dayMode) S.dayMode = "training";
-    if (typeof S.needDayChoice !== "boolean") S.needDayChoice = false;
-    S.currentChoices = Array.isArray(S.currentChoices) ? S.currentChoices : [];
-    S.logs = Array.isArray(S.logs) ? S.logs : [];
-    S.facts = Array.isArray(S.facts) ? S.facts : [];
-    S.history = Array.isArray(S.history) ? S.history : [];
-    S.hasPurchased = !!S.hasPurchased || S.succubi.length > 0;
-    if (typeof S.day !== "number") S.day = 1;
-    if (typeof S.subPhase !== "number") S.subPhase = 0;
+    applyLoadedState(JSON.parse(raw));
     return true;
   } catch (e) {
     return false;
   }
+}
+
+function exportSave() {
+  try { return btoa(unescape(encodeURIComponent(JSON.stringify(S)))); }
+  catch (e) { return ""; }
+}
+
+function importSave(code) {
+  try {
+    const json = decodeURIComponent(escape(atob(String(code).trim())));
+    applyLoadedState(JSON.parse(json));
+    if (typeof renderAll === "function") renderAll();
+    return true;
+  } catch (e) { return false; }
 }
 
 function resetGame() {

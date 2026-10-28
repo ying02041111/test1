@@ -11,7 +11,7 @@
     <header id="status-bar">
       <div class="brand">緋夜飼育錄</div>
       <div class="status-meta">
-        <span id="stat-day">第 1 日 · 清晨</span>
+        <span id="stat-day">第 1 日 · 早晨</span>
         <span id="stat-gold" class="pill">1000 金</span>
         <span id="stat-rank" class="rank-badge">見習飼育員</span>
       </div>
@@ -21,10 +21,12 @@
       <section id="panel-story" class="panel active">
         <div id="story-log" class="story-log"></div>
         <div id="choice-list" class="choice-list"></div>
+        <div class="story-toolbar">
+          <button id="btn-compress" class="btn btn-mini">壓縮劇情</button>
+        </div>
         <div class="story-input">
-          <input id="story-input-field" type="text" placeholder="你想對她做什麼、說些什麼……" autocomplete="off">
+          <input id="story-input-field" type="text" placeholder="你想對他說些什麼、做些什麼……" autocomplete="off">
           <button id="btn-send" class="btn btn-accent">送出</button>
-          <button id="btn-compress" class="btn">壓縮劇情</button>
         </div>
       </section>
 
@@ -50,6 +52,10 @@
             <span>金錢 <b id="master-gold">1000</b></span>
           </div>
           <div class="field">
+            <label for="master-diet">飲食偏好（影響每日吃食花費與過夜回體）</label>
+            <select id="master-diet"></select>
+          </div>
+          <div class="field">
             <label for="master-style">訓練風格</label>
             <select id="master-style"></select>
           </div>
@@ -58,6 +64,10 @@
             <textarea id="master-persona" rows="3" placeholder="寫下你希望扮演的主人樣貌……"></textarea>
           </div>
           <button id="btn-open-api" class="btn">API 設定</button>
+          <div class="house-actions" style="justify-content:flex-start">
+            <button id="btn-export-save" class="btn">匯出存檔</button>
+            <button id="btn-import-save" class="btn">匯入存檔</button>
+          </div>
           <button id="btn-reset" class="btn btn-danger">重新開始</button>
         </div>
       </section>
@@ -191,6 +201,24 @@
         <button class="modal-close" data-close="modal-contract">×</button>
       </div>
       <div id="contract-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 存檔碼視窗 -->
+  <div id="modal-savecode" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h2 id="savecode-title">存檔</h2>
+        <button class="modal-close" data-close="modal-savecode">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="savecode-hint" style="font-size:12.5px;color:var(--ink-soft)"></p>
+        <textarea id="savecode-text" rows="6" style="font-size:11px;font-family:monospace"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('modal-savecode')">關閉</button>
+        <button id="savecode-action" class="btn btn-accent">確定</button>
+      </div>
     </div>
   </div>
 

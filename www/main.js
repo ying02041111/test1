@@ -61,6 +61,7 @@ function bindEvents() {
   });
 
   const styleSel = $("master-style"); if (styleSel) styleSel.addEventListener("change", e => { S.master.style = e.target.value; saveGame(); });
+  const dietSel = $("master-diet"); if (dietSel) dietSel.addEventListener("change", e => { S.master.diet = e.target.value; saveGame(); });
   const persona = $("master-persona"); if (persona) persona.addEventListener("input", e => { S.master.persona = e.target.value; });
 
   const bm = $("btn-open-market"); if (bm) bm.addEventListener("click", openMarketChoiceModal);
@@ -71,6 +72,9 @@ function bindEvents() {
   const bas = $("btn-api-save"); if (bas) bas.addEventListener("click", saveApiSettings);
   const bat = $("btn-api-test"); if (bat) bat.addEventListener("click", doTestApi);
   const br = $("btn-reset"); if (br) br.addEventListener("click", openResetConfirm);
+
+  const bexp = $("btn-export-save"); if (bexp) bexp.addEventListener("click", openExportSave);
+  const bimp = $("btn-import-save"); if (bimp) bimp.addEventListener("click", openImportSave);
 
   const t = $("api-temperature"); const tv = $("temp-val");
   if (t) t.addEventListener("input", () => { if (tv) tv.textContent = t.value; });
@@ -239,6 +243,41 @@ function handleRentHouse(houseId) {
 function toggleDistrict(id) {
   const el = document.querySelector(`.district-block[data-district="${id}"]`);
   if (el) el.classList.toggle("open");
+}
+
+/* ---------- 存檔匯出／匯入 ---------- */
+function openExportSave() {
+  const code = exportSave();
+  document.getElementById("savecode-title").textContent = "匯出存檔";
+  document.getElementById("savecode-hint").textContent = "複製下面這段碼保存。更新失敗重裝後，用「匯入存檔」貼回即可還原進度。";
+  document.getElementById("savecode-text").value = code;
+  const btn = document.getElementById("savecode-action");
+  btn.textContent = "關閉";
+  btn.onclick = () => closeModal("modal-savecode");
+  openModal("modal-savecode");
+}
+
+function openImportSave() {
+  document.getElementById("savecode-title").textContent = "匯入存檔";
+  document.getElementById("savecode-hint").textContent = "把之前匯出的存檔碼貼到下面，再按「匯入」。";
+  document.getElementById("savecode-text").value = "";
+  const btn = document.getElementById("savecode-action");
+  btn.textContent = "匯入";
+  btn.onclick = doImportSave;
+  openModal("modal-savecode");
+}
+
+function doImportSave() {
+  const code = document.getElementById("savecode-text").value.trim();
+  if (!code) { showToast("請貼上存檔碼"); return; }
+  if (importSave(code)) {
+    closeModal("modal-savecode");
+    renderAll();
+    switchTab("story");
+    showToast("存檔已匯入。");
+  } else {
+    showToast("存檔碼無效。");
+  }
 }
 
 /* ---------- 重新開始 ---------- */

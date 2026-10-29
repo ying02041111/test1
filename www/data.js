@@ -258,7 +258,47 @@ const ITEMS = [
   { id: "bm_twin_serpent", name: "【黑市·禁忌】雙首蛇噬律動儀", category: "高階", price: 950, rankReq: 4,
     desc: "形如雙首魔蛇的活物儀器，同時探入兩處深處，隨體溫膨脹、震顫。",
     choiceHint: "放出那雙首的律動儀，任它同時深入",
-    effects: { affection: 25, obedience: 50, stress: 40, hunger: 12, charm: 14, stamina: 6 }, styleTag: "lust" }
+    effects: { affection: 25, obedience: 50, stress: 40, hunger: 12, charm: 14, stamina: 6 }, styleTag: "lust" },
+
+  /* ===== 男魅魔專用（新增） ===== */
+  { id: "plug_jade", name: "凝脂暖玉塞", category: "一般", price: 90, rankReq: 1,
+    desc: "打磨圓潤的暖玉，貼著體溫便微微發熱。無論男女，送進最深處，都能逼出最誠實的顫抖。",
+    choiceHint: "將暖玉塞送入深處，看呼吸一點點亂掉",
+    effects: { affection: 5, obedience: 3, stress: -3, hunger: 3, charm: 3 }, styleTag: "lust" },
+  { id: "male_ring", name: "緋玉束縛環", category: "一般", price: 90, rankReq: 1,
+    desc: "冰涼的玉環，圈住最躁動的那處。越脹，環越緊，所有的忍耐都成了你的掌中之物。",
+    choiceHint: "替他套上玉環，指腹順著緊繃的邊緣收緊",
+    effects: { obedience: 6, stress: 5, charm: 2 }, styleTag: "dominant" },
+  { id: "male_pearl", name: "深處喚醒玉珠", category: "一般", price: 150, rankReq: 1,
+    desc: "一串溫潤玉珠，貼著體溫細細震顫。沒入最深處，再倔強的身子也會先僵住，再軟成水。",
+    choiceHint: "讓玉珠沒入最深處，看膝蓋慢慢發軟",
+    effects: { affection: 6, obedience: 4, stress: -3, hunger: 4, charm: 4 }, styleTag: "lust" },
+  { id: "male_chastity", name: "鎖精銀鎖", category: "一般", price: 180, rankReq: 2,
+    desc: "冰涼的銀製束具，將最私密的慾望牢牢鎖起。鑰匙只在你手裡，他只能紅著臉求你。",
+    choiceHint: "為他扣上銀鎖，輕拍那處壓抑的脹",
+    effects: { obedience: 12, stress: 8, hunger: 6, charm: 1 }, styleTag: "dominant" },
+  { id: "male_frenulum", name: "銀針繫帶夾", category: "一般", price: 110, rankReq: 1,
+    desc: "一枚極細的銀夾，咬住最敏感的那一線。每動一下，細密的刺痛就沿著脊背竄開。",
+    choiceHint: "把銀夾咬上繫帶，聽他倒抽一口氣",
+    effects: { obedience: 8, stress: 6, hunger: 2, charm: 3 }, styleTag: "dominant" },
+
+  /* ===== 男魅魔 · 黑市版（新增） ===== */
+  { id: "male_arousal_oil", name: "雄蕊催情油", category: "秘藥", price: 260, rankReq: 2,
+    desc: "黑市流出的催情秘油，一滴便足以讓最克制的男魅魔眼眶發紅、主動往你懷裡蹭。",
+    choiceHint: "將催情油抹上腿根，看慾望一點點燒起來",
+    effects: { affection: 10, obedience: -1, stress: -5, hunger: 8, charm: 12 }, styleTag: "lust" },
+  { id: "bm_male_cage", name: "【黑市·禁忌】鎏金貞操束籠", category: "高階", price: 420, rankReq: 2,
+    desc: "黑市匠人打造的鎏金束籠，通體鏤雕。扣上之後，連最私密的念頭都只能交到你手裡。",
+    choiceHint: "將束籠扣上，讓那處只能臣服於你的鑰匙",
+    effects: { obedience: 22, stress: 14, hunger: 8, stamina: 3 }, styleTag: "dominant" },
+  { id: "bm_male_rod", name: "【黑市·禁忌】異形深探玉柱", category: "高階", price: 500, rankReq: 3,
+    desc: "黑市深處才有的異形玉柱，通體佈滿柔韌細粒，規格遠超尋常。",
+    choiceHint: "取出那件玉柱，在他耳畔問準備好了沒",
+    effects: { affection: 16, obedience: 24, stress: 18, hunger: 10, charm: 10 }, styleTag: "dominant" },
+  { id: "bm_male_electro", name: "【黑市·禁忌】鎖精紫電環", category: "高階", price: 640, rankReq: 3,
+    desc: "紫晶環身不時竄過一線電弧，收緊時沿著腿根綻開細密的酥麻。",
+    choiceHint: "扣上紫電環，看電弧沿著腿根竄開",
+    effects: { obedience: 28, stress: 20, stamina: 4 }, styleTag: "dominant" }
 ];
 
 const COLLARS = [

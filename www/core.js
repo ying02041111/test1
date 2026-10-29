@@ -657,7 +657,9 @@ const SHOP_ITEM_SOURCE = {
   charm_essence: "blackmarket", abyss_spirit: "blackmarket",
   codex1: "blackmarket", codex2: "blackmarket", codex3: "blackmarket",
   bm_spiked_rod: "blackmarket", bm_blood_clips: "blackmarket",
-  bm_tri_shackle: "blackmarket", bm_iron_mask: "blackmarket", bm_twin_serpent: "blackmarket"
+  bm_tri_shackle: "blackmarket", bm_iron_mask: "blackmarket", bm_twin_serpent: "blackmarket",
+  plug_jade: "official", male_ring: "official", male_pearl: "official", male_chastity: "official", male_frenulum: "official",
+  male_arousal_oil: "blackmarket", bm_male_cage: "blackmarket", bm_male_rod: "blackmarket", bm_male_electro: "blackmarket"
 };
 
 function shopItems(type) { return ITEMS.filter(it => SHOP_ITEM_SOURCE[it.id] === type); }
@@ -719,6 +721,7 @@ function isLeashReady(suc) { return !!(suc && suc.collar && suc.leash); }
 
 function processAICommands(cmd) {
   if (!cmd) return;
+  const n = (v, d) => { const x = Math.round(Number(v)); return isNaN(x) ? (d || 0) : x; };
 
   if (cmd.narrative && typeof appendStoryMessage === "function") {
     appendStoryMessage("system", sceneHeader());
@@ -740,19 +743,19 @@ function processAICommands(cmd) {
           const suc = getSuccubus(c.succubusId) || currentSuccubus();
           if (suc) {
             const before = snapStats(suc);
-            const obe = clamp(Math.round(c.obedience || 0), 0, 40);
+            const obe = clamp(n(c.obedience), 0, 40);
             suc.obedience = clampStatObj(suc, "obedience", (suc.obedience || 0) + obe);
-            if (c.affection) suc.affection = clampStatObj(suc, "affection", (suc.affection || 0) + c.affection);
-            if (c.charm) suc.charm = clampStatObj(suc, "charm", (suc.charm || 0) + c.charm);
-            if (c.stamina) suc.stamina = clampStatObj(suc, "stamina", (suc.stamina || 0) + c.stamina);
-            if (c.stress) suc.stress = clamp(suc.stress + c.stress, 0, 100);
-            if (c.hunger) suc.hunger = clamp(suc.hunger + c.hunger, 0, 100);
+            if (c.affection) suc.affection = clampStatObj(suc, "affection", (suc.affection || 0) + n(c.affection));
+            if (c.charm) suc.charm = clampStatObj(suc, "charm", (suc.charm || 0) + n(c.charm));
+            if (c.stamina) suc.stamina = clampStatObj(suc, "stamina", (suc.stamina || 0) + n(c.stamina));
+            if (c.stress) suc.stress = clamp(suc.stress + n(c.stress), 0, 100);
+            if (c.hunger) suc.hunger = clamp(suc.hunger + n(c.hunger), 0, 100);
             notifyStatChange(suc, before);
-            const expGain = Math.round(c.exp != null ? c.exp : obe * 0.8);
+            const expGain = (c.exp != null) ? n(c.exp) : Math.round(obe * 0.8);
             if (expGain) addMasterExp(expGain);
             if (c.hp) {
-              S.master.hp = clamp(S.master.hp + c.hp, 0, S.master.maxHp);
-              pushLog("system", `這套調教耗去你 ${-c.hp} 點體力。`);
+              S.master.hp = clamp(S.master.hp + n(c.hp), 0, S.master.maxHp);
+              pushLog("system", `這套調教耗去你 ${-n(c.hp)} 點體力。`);
             }
           }
           break;
@@ -778,10 +781,10 @@ function processAICommands(cmd) {
           }
           break;
         }
-        case "time": advanceTime(c.phases || 1); break;
-        case "gold": S.master.gold = Math.max(0, S.master.gold + (c.amount || 0)); break;
-        case "hp": S.master.hp = clamp(S.master.hp + (c.amount || 0), 0, S.master.maxHp); break;
-        case "exp": addMasterExp(c.amount || 0); break;
+        case "time": advanceTime(n(c.phases, 1) || 1); break;
+        case "gold": { const amt = n(c.amount); if (amt) S.master.gold = Math.max(0, S.master.gold + amt); break; }
+        case "hp": { const amt = n(c.amount); if (amt) S.master.hp = clamp(S.master.hp + amt, 0, S.master.maxHp); break; }
+        case "exp": { const amt = n(c.amount); if (amt) addMasterExp(amt); break; }
       }
     }
   }

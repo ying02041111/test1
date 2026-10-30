@@ -226,7 +226,6 @@ function triggerDailySettlement() {
   if (goldCost > 0) msg += ` 你為魅魔張羅吃食，花去 ${goldCost} 金。`;
   if (starveCount > 0) msg += ` 有 ${starveCount} 隻魅魔沒能吃飽，正餓著。`;
 
-  // 自己的吃食＋過夜回復
   const diet = DIET_OPTIONS.find(x => x.id === S.master.diet) || DIET_OPTIONS[1];
   const pay = Math.min(diet.cost, S.master.gold);
   S.master.gold -= pay;
@@ -236,7 +235,6 @@ function triggerDailySettlement() {
     ? ` 你手頭緊，只為自己張羅了 ${pay}/${diet.cost} 金的吃食；一夜休息，體力回復 ${recover}。`
     : ` 你為自己張羅吃食，花去 ${diet.cost} 金；一夜休息，體力回復 ${recover}。`;
 
-  // 房產結算
   fluctuateHousePrices();
   if (!S.ownedHouses.includes(S.currentHouseId)) {
     const rent = dailyRent(S.currentHouseId);
@@ -790,6 +788,7 @@ function processAICommands(cmd) {
   }
 
   if (Array.isArray(cmd.choices) && cmd.choices.length) S.currentChoices = cmd.choices;
+  if (typeof saveGame === "function") saveGame();
   if (typeof renderAll === "function") renderAll();
   maybePromptDayMode();
 }
@@ -861,8 +860,26 @@ function exportSave() {
 
 function importSave(code) {
   try {
-    const json = decodeURIComponent(escape(atob(String(code).trim())));
-    applyLoadedState(JSON.parse(json));
+    const raw = String(code == null ? "" : code).trim();
+    let state = null;
+
+    // 1) 先嘗試當作 base64 匯出碼
+    try {
+      const decoded = decodeURIComponent(escape(atob(raw.replace(/\s+/g, ""))));
+      state = JSON.parse(decoded);
+    } catch (e) {
+      state = null;
+    }
+
+    // 2) 失敗則當作原始 JSON
+    if (!state) {
+      try { state = JSON.parse(raw); } catch (e) { state = null; }
+    }
+
+    if (!state || typeof state !== "object") return false;
+
+    applyLoadedState(state);
+    if (typeof saveGame === "function") saveGame();
     if (typeof renderAll === "function") renderAll();
     return true;
   } catch (e) { return false; }

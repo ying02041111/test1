@@ -27,6 +27,7 @@ function defaultState() {
     summary: "",
     facts: [],
     history: [],
+    unlockedCodex: [],
     lastUsage: null,
     market: { type: null, candidates: [], selectedId: null, cache: {} },
     sellState: null,
@@ -503,6 +504,15 @@ function confirmPurchase() {
     present: true, place: "",
     collar: "", leash: ""
   };
+
+  // 桀驁型（tag-risk）剛到手校準：服從極低、壓力大、易反抗逃跑
+  const pDef = getPersonalityDef(c.personality);
+  if (pDef && pDef.categoryTag === "tag-risk") {
+    suc.obedience = clamp(suc.obedience, 0, 10);
+    suc.stress = clamp((suc.stress || 0) + 25, 0, 100);
+    suc.affection = clamp((suc.affection || 0), 0, 8);
+  }
+
   S.succubi.push(suc);
   S.hasPurchased = true;
 
@@ -520,7 +530,11 @@ function confirmPurchase() {
     if (r && typeof appendStoryMessage === "function") appendStoryMessage("story", r.narrative);
     if (r) S.currentChoices = r.choices || [];
   }
-  pushLog("system", `契約成立。${suc.name} 從此納入你的名下，${suc.risk}的出身，往後都得由你負責。`);
+  if (pDef && pDef.categoryTag === "tag-risk") {
+    pushLog("system", `${suc.name} 骨子裡透著桀驁，剛到手便滿眼抗拒，隨時想逃。`);
+  } else {
+    pushLog("system", `契約成立。${suc.name} 從此納入你的名下，${suc.risk}的出身，往後都得由你負責。`);
+  }
   if (typeof renderAll === "function") renderAll();
 }
 
@@ -672,7 +686,7 @@ const SHOP_INFO = {
 };
 
 const SHOP_ITEM_SOURCE = {
-  soothe_candy: "official", herbal_tea: "official", aroma_oil: "official",
+  soothe_candy: "official", herbal_tea: "official",
   honey_sweet: "official", calming_incense: "official",
   soft_whip: "official", crimson_gag: "official", night_beads: "official",
   velvet_rope: "official", silk_ribbon: "official", feather_duster: "official",
@@ -681,11 +695,12 @@ const SHOP_ITEM_SOURCE = {
   tower_page: "official",
   oldtown_incense: "blackmarket",
   charm_essence: "blackmarket", abyss_spirit: "blackmarket",
-  codex1: "blackmarket", codex2: "blackmarket", codex3: "blackmarket",
   bm_spiked_rod: "blackmarket", bm_blood_clips: "blackmarket",
   bm_tri_shackle: "blackmarket", bm_iron_mask: "blackmarket", bm_twin_serpent: "blackmarket",
   plug_jade: "official", male_ring: "official", male_pearl: "official", male_chastity: "official", male_frenulum: "official",
-  male_arousal_oil: "blackmarket", bm_male_cage: "blackmarket", bm_male_rod: "blackmarket", bm_male_electro: "blackmarket"
+  male_arousal_oil: "blackmarket", bm_male_cage: "blackmarket", bm_male_rod: "blackmarket", bm_male_electro: "blackmarket",
+  milk_dew: "official", milk_pump: "official",
+  bm_milk_spring: "blackmarket", bm_milk_pump: "blackmarket"
 };
 
 function shopItems(type) { return ITEMS.filter(it => SHOP_ITEM_SOURCE[it.id] === type); }
@@ -693,6 +708,12 @@ function shopItems(type) { return ITEMS.filter(it => SHOP_ITEM_SOURCE[it.id] ===
 function buyItem(itemId) {
   const it = getItem(itemId);
   if (!it) return false;
+  if (it.category === "高階" && /^codex/.test(it.id)) {
+    if (!(S.unlockedCodex || []).includes(it.id)) {
+      pushLog("system", "這篇禁典還未尋獲其下落，無法購得。");
+      return false;
+    }
+  }
   if (S.master.gold < it.price) { pushLog("system", `你的錢袋不夠沉，還差 ${it.price - S.master.gold} 金。`); return false; }
   if (S.master.rank < it.rankReq) { pushLog("system", `你的階級尚不足以駕馭「${it.name}」。`); return false; }
   S.master.gold -= it.price;
@@ -762,6 +783,22 @@ function processAICommands(cmd) {
       if (!c) continue;
       switch (c.type) {
         case "item": consumeItemByStory(c.itemId, c.succubusId); break;
+        case "buy_item": {
+          if (!buyItem(c.itemId)) pushLog("system", "購買未成。");
+          break;
+        }
+        case "unlock_codex": {
+          const cid = c.codexId || c.itemId;
+          if (cid) {
+            if (!S.unlockedCodex) S.unlockedCodex = [];
+            if (!S.unlockedCodex.includes(cid)) {
+              S.unlockedCodex.push(cid);
+              const it = getItem(cid);
+              pushLog("system", `［禁典］你尋獲了「${it ? it.name : cid}」的殘卷，其下落已被你記下，此後可於黑市道具鋪購得。`);
+            }
+          }
+          break;
+        }
         case "feed": {
           const suc = getSuccubus(c.succubusId) || currentSuccubus();
           if (suc) { suc.hunger = 0; pushLog("system", `［${suc.name}］飽足，飢餓歸零`); }
@@ -814,7 +851,7 @@ function processAICommands(cmd) {
           break;
         }
         case "time": advanceTime(n(c.phases, 1) || 1); break;
-        case "gold": { const amt = n(c.amount); if (amt) { S.master.gold = Math.max(0, S.master.gold + amt); notifyGoldChange(amt, "打工/事件"); } break; }
+        case "gold": { const amt = n(c.amount); if (amt) { S.master.gold = Math.max(0, S.master.gold + amt); notifyGoldChange(amt, "事件"); } break; }
         case "hp": { const amt = n(c.amount); if (amt) S.master.hp = clamp(S.master.hp + amt, 0, S.master.maxHp); break; }
         case "exp": { const amt = n(c.amount); if (amt) addMasterExp(amt); break; }
       }
@@ -877,6 +914,7 @@ function applyLoadedState(parsed) {
   S.rentedOut = Array.isArray(S.rentedOut) ? S.rentedOut : [];
   S.housePrices = (S.housePrices && typeof S.housePrices === "object") ? S.housePrices : {};
   S.party = Array.isArray(S.party) ? S.party : [];
+  S.unlockedCodex = Array.isArray(S.unlockedCodex) ? S.unlockedCodex : [];
   if (typeof S.dayMode !== "string" || !S.dayMode) S.dayMode = "training";
   if (typeof S.needDayChoice !== "boolean") S.needDayChoice = false;
   S.currentChoices = Array.isArray(S.currentChoices) ? S.currentChoices : [];
@@ -904,28 +942,42 @@ function loadGame() {
   }
 }
 
+/* 匯出存檔：同時打包遊戲進度（含自訂人設）＋API 設定＋長期指令 */
 function exportSave() {
-  try { return btoa(unescape(encodeURIComponent(JSON.stringify(S)))); }
-  catch (e) { return ""; }
+  try {
+    let api = null, dirs = null;
+    if (typeof getApiSettings === "function") api = getApiSettings();
+    if (typeof getDirectives === "function") dirs = getDirectives();
+    const bundle = { v: 1, state: S, api: api, directives: dirs };
+    return btoa(unescape(encodeURIComponent(JSON.stringify(bundle))));
+  } catch (e) { return ""; }
 }
 
 function importSave(code) {
   try {
     const raw = String(code == null ? "" : code).trim();
-    let state = null;
+    let bundle = null;
 
     try {
       const decoded = decodeURIComponent(escape(atob(raw.replace(/\s+/g, ""))));
-      state = JSON.parse(decoded);
+      bundle = JSON.parse(decoded);
     } catch (e) {
-      state = null;
+      bundle = null;
     }
 
-    if (!state) {
-      try { state = JSON.parse(raw); } catch (e) { state = null; }
+    if (!bundle) {
+      try { bundle = JSON.parse(raw); } catch (e) { bundle = null; }
     }
 
-    if (!state || typeof state !== "object") return false;
+    if (!bundle || typeof bundle !== "object") return false;
+
+    let state = bundle;
+    // 新格式：{state, api, directives}；舊格式：直接是遊戲狀態
+    if (bundle.state && typeof bundle.state === "object") {
+      state = bundle.state;
+      if (bundle.api && typeof persistApiSettings === "function") persistApiSettings(bundle.api);
+      if (Array.isArray(bundle.directives) && typeof setDirectives === "function") setDirectives(bundle.directives);
+    }
 
     applyLoadedState(state);
     if (typeof saveGame === "function") saveGame();

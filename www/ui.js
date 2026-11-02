@@ -515,10 +515,41 @@ function renderShop(type) {
     </div>`;
   }).join("");
 
+  // 黑市道具鋪：禁典殘卷區塊（需外出支線解鎖）
+  let codexHtml = "";
+  if (type === "blackmarket" && typeof CODEX_IDS !== "undefined") {
+    codexHtml = CODEX_IDS.map(cid => {
+      const it = getItem(cid);
+      if (!it) return "";
+      const unlocked = (S.unlockedCodex || []).includes(cid);
+      if (!unlocked) {
+        return `<div class="market-card blackmarket">
+          <div class="top"><span class="name">？？？ <span class="tag tag-risk">未尋獲</span></span><span class="price">——</span></div>
+          <div class="meta">禁典殘卷 · 需於外出途中尋獲其下落</div>
+          <div class="background">書頁殘缺，只依稀看得出屬於《緋夜禁典·極刑》。</div>
+          <button class="btn" disabled>尚未解鎖</button>
+        </div>`;
+      }
+      const rank = getRank(it.rankReq);
+      const rankText = `解鎖 ${rank.name}`;
+      const locked = S.master.rank < it.rankReq;
+      const poor = S.master.gold < it.price;
+      const btnLabel = locked ? "階級不足" : (poor ? "金幣不足" : "購買");
+      return `<div class="market-card blackmarket">
+        <div class="top"><span class="name">${escapeHtml(it.name)} <span class="tag tag-risk">已尋獲</span></span><span class="price">${it.price} 金</span></div>
+        <div class="meta"><span class="tag tag-risk">${escapeHtml(it.category)}</span> · ${rankText}${locked ? ' <span class="tag tag-risk">階級不足</span>' : ""}</div>
+        <div class="background">${escapeHtml(it.desc)}</div>
+        <div class="meta">${effText(it.effects)}</div>
+        <button class="btn ${(locked || poor) ? "" : "btn-accent"}" onclick="handleBuyItem('${it.id}')" ${(locked || poor) ? "disabled" : ""}>${btnLabel}</button>
+      </div>`;
+    }).join("");
+  }
+
   body.innerHTML = `
     <div class="market-intro">${escapeHtml(info.desc)}　<span class="tag ${type === "blackmarket" ? "tag-risk" : "tag-safe"}">${info.riskLabel}</span></div>
     <button class="btn" onclick="openShopChoice()">返回選擇</button>
-    ${itemsHtml}`;
+    ${itemsHtml}
+    ${codexHtml ? `<div class="panel-head" style="margin-top:8px"><b>禁典殘卷</b></div>${codexHtml}` : ""}`;
 }
 
 function handleBuyItem(itemId) {
@@ -526,6 +557,7 @@ function handleBuyItem(itemId) {
     renderShop(currentShopType);
     renderInventory();
     renderStatusBar();
+    renderMaster();
     showToast(`已購入「${getItem(itemId).name}」。`);
     if (typeof saveGame === "function") saveGame();
   }
@@ -582,6 +614,7 @@ function handleBuyGear(gearId) {
     renderCollarShop(currentCollarShopType);
     renderInventory();
     renderStatusBar();
+    renderMaster();
     showToast(`已購入「${getGearDef(gearId).name}」。`);
     if (typeof saveGame === "function") saveGame();
   }

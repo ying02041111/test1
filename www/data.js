@@ -180,8 +180,8 @@ const MALE_NAMES = [
 const JOBS = [
   { id: "delivery", name: "舊城報館配送", hpCost: 15, goldEarn: 45, expGain: 5, desc: "騎著單車在石板路與巷弄間發放新聞與報紙。" },
   { id: "bar_clean", name: "燈紅街酒館打掃", hpCost: 20, goldEarn: 65, expGain: 8, desc: "清掃酒吧的霓虹燈管與地板，收拾客人留下的酒杯。" },
-  { id: "tower_porter", name: "高塔器械搬運", hpCost: 35, goldEarn: 120, expGain: 15, desc: "搬運重型電視機與大型家電至高塔貴族的宅邸。" },
-  { id: "market_clerk", name: "家電行售貨助手", hpCost: 10, goldEarn: 35, expGain: 4, desc: "向顧客展示新到貨的彩色電視與真空吸塵器。" }
+  { id: "tower_porter", name: "高塔器械搬運", hpCost: 35, goldEarn: 120, expGain: 15, desc: "搬運沉重的蒸氣顯像鏡與大型機具至高塔貴族的宅邸。" },
+  { id: "market_clerk", name: "蒸氣機具行售貨助手", hpCost: 10, goldEarn: 35, expGain: 4, desc: "向顧客展示新到貨的蒸氣顯像鏡與蒸氣除塵機。" }
 ];
 
 const ITEMS = [
@@ -324,8 +324,27 @@ const ITEMS = [
   { id: "bm_male_electro", name: "【黑市·禁忌】鎖精紫電環", category: "高階", price: 640, rankReq: 3,
     desc: "紫晶環身不時竄過一線電弧。",
     choiceHint: "扣上紫電環，看電弧沿著腿根竄開",
-    effects: { obedience: 28, stress: 20, stamina: 4 }, styleTag: "dominant" }
+    effects: { obedience: 28, stress: 20, stamina: 4 }, styleTag: "dominant" },
+  { id: "milk_dew", name: "朝露凝乳香", category: "秘藥", price: 180, rankReq: 2,
+    desc: "自晨露與乳香草熬煉的淡金色釀液，飲下數日，胸前便悄然盈滿。",
+    choiceHint: "將淡金色的釀液遞到唇邊，看他小口嚥下",
+    effects: { charm: 6, stress: -4, hunger: 8 }, styleTag: "lust" },
+  { id: "bm_milk_spring", name: "流蜜之泉", category: "秘藥", price: 520, rankReq: 3,
+    desc: "黑市深處流傳的乳白秘液，據說飲下一次，身體便成為源源不絕的蜜泉。",
+    choiceHint: "將乳白的秘液餵下，看眼底泛起迷茫",
+    effects: { charm: 12, affection: 6, stress: -6, hunger: 15 }, styleTag: "lust" },
+  { id: "milk_pump", name: "黃銅蒸氣啜露罩", category: "一般", price: 240, rankReq: 2,
+    desc: "官方匠人以黃銅打造，蒸氣徐徐鼓動，溫柔地啜取盈滿的甜露。",
+    choiceHint: "將黃銅啜露罩覆上，聽蒸氣輕響",
+    effects: { affection: 4, charm: 4, stress: -6 }, styleTag: "gentle" },
+  { id: "bm_milk_pump", name: "紫晶律動啜乳盅", category: "高階", price: 580, rankReq: 3,
+    desc: "紫晶盅身嵌著律動機芯，貼上便一波波吸啜震顫，連骨髓都酥軟。",
+    choiceHint: "將紫晶啜乳盅扣上，看腰身一下下繃緊",
+    effects: { affection: 8, charm: 8, stress: -8, hunger: 6 }, styleTag: "lust" }
 ];
+
+/* 禁典殘卷：只能透過外出支線解鎖，解鎖後才可於黑市道具鋪購得 */
+const CODEX_IDS = ["codex1", "codex2", "codex3"];
 
 const COLLARS = [
   { id: "col_leather", name: "素面皮革項圈", material: "皮革", look: "素圈", weight: "輕", price: 120, rankReq: 1, source: "official",
@@ -364,25 +383,25 @@ const COLLAR_INFO = {
 
 const DISTRICTS = [
   { id: "oldtown", name: "緋夜舊城", isHigh: false,
-    desc: "緋夜最早甦醒的街區，石牆斑駁，燈火昏黃，沿街擺著老舊收音機與霓虹招牌。",
+    desc: "緋夜最早甦醒的街區，石牆斑駁，燈火昏黃，黃銅蒸氣管沿牆蜿蜒，街角播音匣沙沙作響。",
     houses: [
-      { id: "oldtown_loft", name: "臨街閣樓", price: 200, capacity: 1, desc: "一間能望見窄巷的閣樓，配備一台舊黑白電視機。", tags: ["起點"] },
+      { id: "oldtown_loft", name: "臨街閣樓", price: 200, capacity: 1, desc: "一間能望見窄巷的閣樓，配備一台老舊的蒸氣顯像鏡。", tags: ["起點"] },
       { id: "oldtown_basement", name: "地窖暗室", price: 500, capacity: 2, desc: "石砌的地窖，隔音極佳。", tags: ["隔音", "隱密"] }
     ] },
   { id: "lantern", name: "燈紅暗巷", isHigh: true,
-    desc: "霓虹與紅燈籠交織的不夜街，酒吧裡放著爵士樂曲。",
+    desc: "霓虹與紅燈籠交織的不夜街，酒吧裡放著爵士樂曲，蒸氣從地縫裡一縷縷冒出。",
     houses: [
       { id: "lantern_parlor", name: "紅簾雅房", price: 900, capacity: 2, desc: "垂著紅絲絨簾的雅房。", tags: ["人脈"] },
       { id: "lantern_penthouse", name: "頂樓香巢", price: 1800, capacity: 4, desc: "俯瞰整條燈紅街的頂樓。", tags: ["寬敞"] }
     ] },
   { id: "tower", name: "高塔區", isHigh: true,
-    desc: "緋夜的權力中樞，潔白的尖塔刺入夜空，裝著最新型彩色電視與冷氣電器。",
+    desc: "緋夜的權力中樞，潔白的尖塔刺入夜空，裝著最新型的蒸氣顯像鏡與冰晶換氣扇。",
     houses: [
       { id: "tower_suite", name: "塔間書齋", price: 2200, capacity: 3, desc: "滿牆藏書的書齋。", tags: ["學識"] },
-      { id: "tower_estate", name: "高塔莊園", price: 4500, capacity: 6, desc: "帶花園與私人電熱浴池的莊園。", tags: ["奢華", "庭園"] }
+      { id: "tower_estate", name: "高塔莊園", price: 4500, capacity: 6, desc: "帶花園與私人蒸氣暖泉浴池的莊園。", tags: ["奢華", "庭園"] }
     ] },
   { id: "outskirt", name: "郊外莊園", isHigh: true,
-    desc: "遠離城區的幽靜之地。",
+    desc: "遠離城區的幽靜之地，被黑森林環抱，最接近深淵那道細縫。",
     houses: [
       { id: "outskirt_villa", name: "隱林別墅", price: 6000, capacity: 8, desc: "被黑森林環抱的別墅。", tags: ["絕密", "廣闊"] }
     ] }
@@ -443,7 +462,8 @@ const CONTRACT_INFO = {
 };
 
 const GAME_INTRO = [
-  "緋夜城不會真正天亮。當街道上的霓虹燈一盞盞亮起，廣播隨之傳出微弱的爵士音符，你便知道，又到了飼育的時刻。",
-  "這座西方奇幻都市裡，魅魔隨處可見，街頭巷尾隨時能遇到牽著魅魔同行的人群。你是緋夜城的飼育員，懷裡揣著一紙新的契約。",
+  "緋夜城（Vermilion Nocturne）是座夾在深淵與現世之間的奇幻都會——黃銅管線沿著石牆蜿蜒，蒸氣顯像鏡映出滿街霓虹，街角黃銅播音匣漏出沙沙的爵士。",
+  "這裡的晝夜向來分明，只是暮色總比別處濃些。可每隔數日、數週，天空會突然染成一片血紅、晝夜不分，城裡人稱之為「緋紅永夜」。永夜降臨時，魅魔血脈躁動、淫紋自行甦醒，飼育員們既期待又戒慎。",
+  "魅魔在這座城隨處可見，被主人以項圈與牽繩領著走在街頭，是再尋常不過的風景。而你是新掛牌的一名飼育員，懷裡揣著一紙墨水未乾的契約。",
   "要從何處開始——是踏進雪白的高塔契約廳，還是鑽入燈紅暗巷最深處的鐵籠之間？"
 ];

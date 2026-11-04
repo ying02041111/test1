@@ -202,6 +202,10 @@ function buildSystemPrompt() {
   const gearText = ownedGearText();
   const personaText = m.persona ? m.persona : "（未設定）";
 
+  const jobsText = (S.jobs && S.jobs.length)
+    ? S.jobs.map(j => `「${j.name}」—報酬 ${j.goldEarn} 金、耗體 ${j.hpCost}、歷練 ${j.expGain}`).join("；")
+    : "（目前暫無可接工作）";
+
   const modeText = S.dayMode === "rest" ? "休息日" : "訓練日";
   const partyNames = (S.party || []).map(id => { const s = getSuccubus(id); return s ? s.name : ""; }).filter(Boolean);
   const partyText = S.dayMode === "rest" ? (partyNames.length ? `今天你帶了：${partyNames.join("、")}。` : "今天你獨自出門，沒有帶任何魅魔。") : "";
@@ -243,6 +247,13 @@ function buildSystemPrompt() {
 【時間與地點】
 當前時間：${nowText}；地點：${locName}。
 - 敘事開頭用一行場景（時間·地點），必須與上列完全一致。
+
+【時間推進（最重要，務必精準）】
+- 一天有四個時段，依序為：早晨 → 午後 → 傍晚 → 深夜 →（就寢後才跨日回到早晨）。
+- 每個時段都要有「實質內容」，不要讓某個時段特別冗長、某個特別短；午後、傍晚、深夜的戲份要大致均衡。
+- 「一次回應」通常只推進 1 個時段；只有明確的長活動（完整調教、逛街半日、外出辦事）才推 1 個時段，不可一次連跳多個時段。
+- 深夜時段：除非角色「明確就寢並描寫入睡」，否則絕對不可跨日（不可發送到隔天的 time）。深夜還醒著、還在說話時，只能停留在深夜。
+- 跨日＝角色上床就寢 → 發送 {"type":"time","phases":1}，才會進入隔天早晨。
 
 【今日模式（務必遵守）】
 今天是${modeText}。${partyText}
@@ -296,18 +307,11 @@ ${succText}
 - 男性魅魔若服用產乳秘藥，也可演出「違和的酥麻感」等反差情節。
 
 【訓練的結算（極重要）】
-- 「一整套動作」＝有明確起訖的調教流程（如「鞭打 10 下」「完整綁縛一輪」「連續服從 5 道指令」）。
-- 進行中的每一擊、每個小動作，都不給服從，只描寫反應。
+- 「一整套動作」＝有明確起訖的調教流程（如「鞭打 10 下」「完整綁縛一輪」「連續服從 5 道指令」「跑完全程」「做完一整套體能操練」）。
+- 進行中的每一擊、每個小動作，都不給數值，只描寫反應。
 - 整套完成時，才送一次 train 指令：服從 +10~30，並依難度附帶 exp（5~25）與 hp（-3~-12）。
-- 運動／體能訓練也算一套動作，完成後體能 stamina +10~30（用 train 的 stamina 欄）。
+- 【體能／運動類訓練特別注意】跑步、操練等「全程」做完才用 train 給體能 stamina +10~30；收操、拉筋、緩和運動等「收尾」只能給少量 stamina +3~8（用 train 的 stamina 欄）。絕對不可「每跑一段」就加一次，不可反覆加分。
 - 不要用 stat 改服從；服從一律用 train。休息日不可發送 train。
-
-【時間推進（重要）】
-- 移動／前往某地本身「不耗時段」，不要為了走路單獨發 time；除非長途跋涉或明確跨晝夜。
-- 完成一整套較重的行動（一輪調教、長談、親密、逛街半日）→ 推 1 個時段。
-- 打零工＝做完一份零工才發「一次」{"type":"time","phases":1}（只過一個時段，如早晨→午後）。
-- 小睡／短暫休息：可推 1 個時段、回少量體力（hp +5~8），但「不可跨夜」。
-- 過夜（睡到隔天早晨）才跨日。
 
 【主控體力消耗】
 - 完成一整套行動會消耗主控體力：出門購物／奔波 hp -2~5；劇烈或長途 -6~10；一整套調教見 train 的 hp。
@@ -318,9 +322,10 @@ ${succText}
 
 【支線與零工（務必結算）】
 - 休息日出門時，可隨機觸發支線事件（市場奇遇、迷路的旅人、神秘委託等）。
-- 玩家可打零工賺外快。完成一份零工時，在 commands 送出整數指令結算：
-  {"type":"gold","amount":8~25}、{"type":"hp","amount":-2~-5}、{"type":"exp","amount":3~8}、{"type":"time","phases":1}
-- 工錢只能在 commands 的 gold 指令給，amount 必須是「純數字」，不可只在敘事裡提到工錢。
+- 以下是「當前可接的工作」（與打工選單完全一致，報酬固定）：
+  ${jobsText}
+- 玩家說要去打工／工作時，只能從上面挑一份，並在敘事中演出該工作內容，結算指令必須與該工作「完全一致」：{"type":"gold","amount":<報酬>}、{"type":"hp","amount":-<耗體>}、{"type":"exp","amount":<歷練>}、{"type":"time","phases":1}。
+- 絕不可自己編造工作或金額，也不可與上面列表不符。
 - 玩家在劇情對話中要求「購買某物」時：
   ・若買的是商店清單裡的道具，請在 commands 送出 {"type":"buy_item","itemId":"<該道具id>"}，系統會自動扣款入庫。
   ・若是清單外的日常雜物（陶哨、零食、飲料、小玩意），請用 gold 指令扣一筆錢：{"type":"gold","amount":-3~-30}，並在敘事中交代買到了什麼。
@@ -566,6 +571,41 @@ async function callStoryAI(userText) {
   const r = mockNarrativeResponse(userText);
   setUsage(r.narrative, null, sysContent.length, userText);
   return finishTurn(userText, r);
+}
+
+/* ---------- 幕後指令（OOC）：直接對 AI 下指令，不影響劇情 ---------- */
+async function sendOocDirective(text) {
+  const cfg = getApiSettings();
+  if (!cfg.url || !cfg.key) {
+    if (typeof appendStoryMessage === "function") appendStoryMessage("system", "［幕後］尚未設定 API，無法使用幕後指令。");
+    return;
+  }
+  const url = normalizeApiUrl(cfg.url);
+
+  const names = S.succubi.map(s => `${s.name}（${s.gender}·${s.raceName}）`).join("、") || "無";
+  const brief = `當前：第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]}，主人階級 ${getRank(S.master.rank).name}，名下魅魔：${names}。`;
+
+  const sys = "你是《緋夜飼育錄》的幕後助手。玩家想在劇情之外對你下指令（例如調整世界觀、角色的設定或你往後的行為方式），這不會當作遊戲內的劇情。請簡短回覆：確認你已理解並會照辦，或若指令不清楚就提出問題。只回覆純文字，不要 JSON，不要新增遊戲劇情。";
+
+  try {
+    const res = await sendChat(url, cfg, [
+      { role: "system", content: sys },
+      { role: "user", content: brief + "\n幕後指令：" + text }
+    ], 400);
+
+    let reply = "（無回覆）";
+    if (res.ok) {
+      const data = await res.json();
+      const choice = data && data.choices && data.choices[0];
+      const msg = choice && choice.message;
+      reply = (msg && (msg.content || msg.reasoning_content || "")) || reply;
+    } else {
+      reply = "AI 回應錯誤（" + res.status + "）。";
+    }
+    if (typeof appendStoryMessage === "function") appendStoryMessage("system", "［幕後］" + String(reply).trim());
+  } catch (e) {
+    if (typeof appendStoryMessage === "function") appendStoryMessage("system", "［幕後］連線失敗：" + (e && e.message ? e.message : e));
+  }
 }
 
 /* ---------- 連線測試 ---------- */

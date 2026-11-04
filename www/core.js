@@ -11,6 +11,7 @@ function defaultState() {
     master: { hp: 100, maxHp: 100, gold: 1000, exp: 0, rank: 1, style: "gentle", persona: "", diet: "normal" },
     day: 1,
     subPhase: 0,
+    settledDay: 1,
     dayMode: "training",
     needDayChoice: true,
     party: [],
@@ -28,6 +29,8 @@ function defaultState() {
     facts: [],
     history: [],
     unlockedCodex: [],
+    jobs: [],
+    jobsDay: 0,
     lastUsage: null,
     market: { type: null, candidates: [], selectedId: null, cache: {} },
     sellState: null,
@@ -125,7 +128,6 @@ function notifyStatChange(suc, before) {
   if (parts.length) pushLog("system", `［${suc.name}］${parts.join("　")}`);
 }
 
-/* 金錢變動提醒 */
 function notifyGoldChange(delta, reason) {
   if (!delta || delta === 0) return;
   const sign = delta > 0 ? "+" : "";
@@ -184,6 +186,16 @@ function rollSuccubus(raceKey) {
   };
 }
 
+/* 早晨選項（跨日後顯示） */
+function morningChoices() {
+  return [
+    "拉開窗簾，讓晨光透進來。",
+    "去看看誰還在睡，誰已經醒了。",
+    "張羅今天的吃食。",
+    "盤算今天要做些什麼。"
+  ];
+}
+
 function advanceTime(phases) {
   if (!phases || phases <= 0) return;
   for (let i = 0; i < phases; i++) {
@@ -191,13 +203,17 @@ function advanceTime(phases) {
 
     // 每個時段推進，魅魔飢餓度自然上升
     S.succubi.forEach(s => {
-      s.hunger = clamp((s.hunger || 0) + 5, 0, 100);
+      s.hunger = clamp((s.hunger || 0) + 7, 0, 100);
     });
 
     if (S.subPhase >= SUBPHASE_NAMES.length) {
       S.subPhase = 0;
       S.day++;
-      triggerDailySettlement();
+      // 只在「真正推進到新的一天」時才結算，避免手動調回時間造成重複加錢
+      if (S.day > (S.settledDay || 0)) {
+        S.settledDay = S.day;
+        triggerDailySettlement();
+      }
     }
   }
 }
@@ -217,7 +233,6 @@ function triggerDailySettlement() {
     s.stamina   = clampStatObj(s, "stamina",   (s.stamina || 0) - 1);
     s.stress = clamp(s.stress + 4, 0, 100);
 
-    // 依性格決定服從每日消退
     const pDef = getPersonalityDef(s.personality);
     let obeyDecay = 2;
     if (pDef.obedMult >= 1.1) obeyDecay = 1;
@@ -276,6 +291,13 @@ function triggerDailySettlement() {
   const income = 30 + S.master.rank * 15 + permIncome;
   S.master.gold += income;
   notifyGoldChange(income, permIncome > 0 ? "產業收益（含永久契約侍奉之禮）" : "產業收益");
+
+  // 每 3 天刷新當前地區的打工列表
+  if (typeof S.jobsDay !== "number") S.jobsDay = S.day;
+  if (S.day - S.jobsDay >= 3 || !(S.jobs && S.jobs.length)) {
+    refreshJobs();
+    S.jobsDay = S.day;
+  }
 }
 
 function maybePromptDayMode() {
@@ -505,7 +527,6 @@ function confirmPurchase() {
     collar: "", leash: ""
   };
 
-  // 桀驁型（tag-risk）剛到手校準：服從極低、壓力大、易反抗逃跑
   const pDef = getPersonalityDef(c.personality);
   if (pDef && pDef.categoryTag === "tag-risk") {
     suc.obedience = clamp(suc.obedience, 0, 10);
@@ -858,15 +879,34 @@ function processAICommands(cmd) {
     }
   }
 
-  if (Array.isArray(cmd.choices) && cmd.choices.length) S.currentChoices = cmd.choices;
+  // 跨日後改顯示早晨選項；否則採用 AI 給的選項
+  if (S.needDayChoice) {
+    S.currentChoices = morningChoices();
+  } else if (Array.isArray(cmd.choices) && cmd.choices.length) {
+    S.currentChoices = cmd.choices;
+  }
+
   if (typeof saveGame === "function") saveGame();
   if (typeof renderAll === "function") renderAll();
   maybePromptDayMode();
 }
 
-/* 打工：只耗 1 個時段 */
+/* 打工：從「當前可接工作」裡找，只耗 1 個時段 */
+function currentJob(jobId) {
+  const pool = (S.jobs && S.jobs.length) ? S.jobs : JOBS;
+  return pool.find(j => j.id === jobId);
+}
+
+function refreshJobs() {
+  const did = S.currentDistrictId || "oldtown";
+  const pool = (typeof JOBS !== "undefined" ? JOBS : []).filter(j => j.district === did);
+  const src = pool.length ? pool : JOBS;
+  const shuffled = src.slice().sort(() => Math.random() - 0.5);
+  S.jobs = shuffled.slice(0, Math.min(3, shuffled.length));
+}
+
 function executeJob(jobId) {
-  const job = (typeof JOBS !== "undefined" ? JOBS : []).find(j => j.id === jobId);
+  const job = currentJob(jobId);
   if (!job) return false;
   if (S.master.hp < job.hpCost) {
     if (typeof showToast === "function") showToast("體力不足，無法完成工作。");
@@ -887,6 +927,56 @@ function pushLog(type, text) {
 }
 
 const SAVE_KEY = "ck_save_v4";
+
+/* ---------- LZW 壓縮（縮短存檔碼） ---------- */
+function lzwCompress(str) {
+  let dict = {};
+  for (let i = 0; i < 256; i++) dict[String.fromCharCode(i)] = i;
+  let next = 256, w = "", codes = [];
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charAt(i);
+    const wc = w + c;
+    if (dict[wc] !== undefined) { w = wc; }
+    else {
+      codes.push(dict[w]);
+      dict[wc] = next++;
+      if (next > 65534) { dict = {}; for (let j = 0; j < 256; j++) dict[String.fromCharCode(j)] = j; next = 256; }
+      w = c;
+    }
+  }
+  if (w !== "") codes.push(dict[w]);
+  const bytes = [];
+  for (let k = 0; k < codes.length; k++) { const code = codes[k]; bytes.push(code >> 8, code & 255); }
+  let bin = "";
+  for (let k = 0; k < bytes.length; k++) bin += String.fromCharCode(bytes[k]);
+  return btoa(bin);
+}
+
+function lzwDecompress(b64) {
+  const bin = atob(b64);
+  const codes = [];
+  for (let i = 0; i + 1 < bin.length; i += 2) {
+    codes.push((bin.charCodeAt(i) << 8) | bin.charCodeAt(i + 1));
+  }
+  if (!codes.length) return "";
+  let dict = {};
+  for (let i = 0; i < 256; i++) dict[i] = String.fromCharCode(i);
+  let next = 256;
+  let w = String.fromCharCode(codes[0]);
+  let out = w;
+  for (let j = 1; j < codes.length; j++) {
+    const k = codes[j];
+    let entry;
+    if (dict[k] !== undefined) entry = dict[k];
+    else if (k === next) entry = w + w.charAt(0);
+    else return null;
+    out += entry;
+    dict[next++] = w + entry.charAt(0);
+    if (next > 65534) { dict = {}; for (let x = 0; x < 256; x++) dict[x] = String.fromCharCode(x); next = 256; }
+    w = entry;
+  }
+  return out;
+}
 
 function applyLoadedState(parsed) {
   const base = defaultState();
@@ -924,6 +1014,10 @@ function applyLoadedState(parsed) {
   S.hasPurchased = !!S.hasPurchased || S.succubi.length > 0;
   if (typeof S.day !== "number") S.day = 1;
   if (typeof S.subPhase !== "number") S.subPhase = 0;
+  if (typeof S.settledDay !== "number") S.settledDay = S.day;
+  S.jobs = Array.isArray(S.jobs) ? S.jobs : [];
+  S.jobsDay = typeof S.jobsDay === "number" ? S.jobsDay : 0;
+  if (!S.jobs.length) refreshJobs();
 }
 
 function saveGame() {
@@ -942,14 +1036,22 @@ function loadGame() {
   }
 }
 
-/* 匯出存檔：同時打包遊戲進度（含自訂人設）＋API 設定＋長期指令 */
+/* 匯出存檔：LZW 壓縮（前綴 C），過大則退回 base64（前綴 P），同時打包 API 設定＋長期指令 */
 function exportSave() {
   try {
     let api = null, dirs = null;
     if (typeof getApiSettings === "function") api = getApiSettings();
     if (typeof getDirectives === "function") dirs = getDirectives();
-    const bundle = { v: 1, state: S, api: api, directives: dirs };
-    return btoa(unescape(encodeURIComponent(JSON.stringify(bundle))));
+    const bundle = { v: 2, state: S, api: api, directives: dirs };
+    const json = JSON.stringify(bundle);
+    if (json.length > 60000) {
+      return "P" + btoa(unescape(encodeURIComponent(json)));
+    }
+    try {
+      return "C" + lzwCompress(json);
+    } catch (e) {
+      return "P" + btoa(unescape(encodeURIComponent(json)));
+    }
   } catch (e) { return ""; }
 }
 
@@ -958,21 +1060,25 @@ function importSave(code) {
     const raw = String(code == null ? "" : code).trim();
     let bundle = null;
 
-    try {
-      const decoded = decodeURIComponent(escape(atob(raw.replace(/\s+/g, ""))));
-      bundle = JSON.parse(decoded);
-    } catch (e) {
-      bundle = null;
-    }
-
-    if (!bundle) {
-      try { bundle = JSON.parse(raw); } catch (e) { bundle = null; }
+    if (raw.charAt(0) === "C") {
+      const dec = lzwDecompress(raw.slice(1));
+      if (!dec) return false;
+      bundle = JSON.parse(dec);
+    } else {
+      let s = raw;
+      if (raw.charAt(0) === "P") s = raw.slice(1);
+      try {
+        const decoded = decodeURIComponent(escape(atob(s.replace(/\s+/g, ""))));
+        bundle = JSON.parse(decoded);
+      } catch (e) {
+        bundle = null;
+      }
+      if (!bundle) { try { bundle = JSON.parse(raw); } catch (e) { bundle = null; } }
     }
 
     if (!bundle || typeof bundle !== "object") return false;
 
     let state = bundle;
-    // 新格式：{state, api, directives}；舊格式：直接是遊戲狀態
     if (bundle.state && typeof bundle.state === "object") {
       state = bundle.state;
       if (bundle.api && typeof persistApiSettings === "function") persistApiSettings(bundle.api);
@@ -989,5 +1095,6 @@ function importSave(code) {
 function resetGame() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
   S = defaultState();
+  refreshJobs();
   if (typeof renderAll === "function") renderAll();
 }

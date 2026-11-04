@@ -47,6 +47,14 @@ function hideThinking() {
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
 }
 
+/* 捲動到劇情最底部 */
+function scrollStoryToBottom() {
+  requestAnimationFrame(() => {
+    const log = document.getElementById("story-log");
+    if (log) log.scrollTop = log.scrollHeight;
+  });
+}
+
 function renderAll() {
   renderStatusBar();
   renderStoryLog();
@@ -55,6 +63,7 @@ function renderAll() {
   renderMaster();
   renderInventory();
   renderProperty();
+  scrollStoryToBottom();
 }
 
 function renderStatusBar() {
@@ -75,6 +84,7 @@ function switchTab(tabId) {
   const panel = document.getElementById("panel-" + tabId);
   if (panel) panel.classList.add("active");
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tabId));
+  if (tabId === "story") scrollStoryToBottom();
 }
 
 function appendStoryMessage(type, text) {
@@ -739,7 +749,11 @@ function openTimeAdjustModal() {
 function applyTimeAdjustment() {
   const d = parseInt(document.getElementById("input-adj-day").value, 10);
   const p = parseInt(document.getElementById("select-adj-phase").value, 10);
-  if (!isNaN(d) && d > 0) S.day = d;
+  if (!isNaN(d) && d > 0) {
+    S.day = d;
+    // 同步已結算天數，避免調回時間後重複發錢
+    if (d > (S.settledDay || 0)) S.settledDay = d;
+  }
   if (!isNaN(p) && p >= 0 && p < SUBPHASE_NAMES.length) S.subPhase = p;
   closeModal("modal-confirm");
   pushLog("system", `［系統］已手動將時間調整為：第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]}`);
@@ -747,11 +761,13 @@ function applyTimeAdjustment() {
   saveGame();
 }
 
-/* ---------- 打工選單 ---------- */
+/* ---------- 打工選單（顯示「當前可接工作」） ---------- */
 function openJobModal() {
   const title = document.querySelector("#modal-help .modal-head h2");
   if (title) title.textContent = "城內打工告示板";
-  document.getElementById("help-body").innerHTML = JOBS.map(j => `
+  const jobs = (S.jobs && S.jobs.length) ? S.jobs : (typeof JOBS !== "undefined" ? JOBS : []);
+  const listHtml = jobs.length
+    ? jobs.map(j => `
     <div class="item-card" style="margin-bottom:10px;padding:10px;border:1px solid #ccc;border-radius:8px">
       <div style="display:flex;justify-content:space-between;font-weight:bold">
         <span>${escapeHtml(j.name)}</span>
@@ -760,7 +776,8 @@ function openJobModal() {
       <div style="font-size:12px;color:#666;margin:4px 0">${escapeHtml(j.desc)}</div>
       <div style="font-size:11px;color:#888">消耗體力：${j.hpCost} | 時間：1 時段</div>
       <button class="btn btn-accent" style="margin-top:6px;width:100%" onclick="closeModal('modal-help'); executeJob('${j.id}');">前往工作</button>
-    </div>
-  `).join("");
+    </div>`).join("")
+    : `<p style="font-size:13px;color:var(--ink-soft)">這個街區目前沒有可接的工作。</p>`;
+  document.getElementById("help-body").innerHTML = listHtml;
   openModal("modal-help");
 }

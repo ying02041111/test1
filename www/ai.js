@@ -42,8 +42,27 @@ function aiDiag(msg) {
   } catch (_) {}
 }
 
+function getOpenCodeSessionId() {
+  try {
+    let id = localStorage.getItem("opencode_session_id");
+    if (!id) {
+      id = "sess-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem("opencode_session_id", id);
+    }
+    return id;
+  } catch (e) {
+    return "sess-" + Math.random().toString(36).slice(2, 10);
+  }
+}
+
 async function sendChat(url, cfg, messages, maxTokens) {
-  const headers = { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key };
+  const headers = { "Content-Type": "application/json" };
+  if (cfg.key) headers["Authorization"] = "Bearer " + cfg.key;
+
+  // opencode 要求：自訂 User-Agent 與 session 識別碼
+  headers["x-opencode-session"] = getOpenCodeSessionId();
+  try { headers["User-Agent"] = "crimson-nocturne-breeding/1.0"; } catch (e) {}
+
   const on = !!cfg.thinking;
 
   const base = {
@@ -56,16 +75,17 @@ async function sendChat(url, cfg, messages, maxTokens) {
   };
   if (maxTokens) base.max_tokens = maxTokens;
 
-  const body = Object.assign({}, base, { thinking: { type: on ? "enabled" : "disabled" } });
-  if (on) body.reasoning_effort = cfg.reasoningEffort || "high";
-
-  let res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok) {
-    const res2 = await fetch(url, { method: "POST", headers, body: JSON.stringify(base) });
-    if (res2.ok || res2.status !== res.status) return res2;
+  let body = base;
+  if (on) {
+    body = Object.assign({}, base, {
+      thinking: { type: "enabled" },
+      reasoning_effort: cfg.reasoningEffort || "high"
+    });
   }
-  return res;
+
+  return fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
 }
+
 
 function ownedItemNames() {
   return S.inventory.map(id => { const it = getItem(id); return it ? it.name : ""; }).filter(Boolean);
@@ -141,7 +161,7 @@ async function compressStory() {
 
   let summary = "";
   const cfg = getApiSettings();
-  if (cfg.url && cfg.key) {
+  if (cfg.url) {
     try {
       const url = normalizeApiUrl(cfg.url);
       const res = await sendChat(url, cfg, [
@@ -504,8 +524,8 @@ async function callStoryAI(userText) {
   const cfg = getApiSettings();
   const sysContent = buildSystemPrompt();
 
-  if (!cfg.url || !cfg.key) {
-    aiDiag("尚未設定 API（缺 Key 或 URL），改用離線模式。");
+  if (!cfg.url) {
+    aiDiag("尚未設定 API URL，改用離線模式。");
     const r = mockNarrativeResponse(userText);
     setUsage(r.narrative, null, sysContent.length, userText);
     return finishTurn(userText, r);
@@ -576,8 +596,8 @@ async function callStoryAI(userText) {
 /* ---------- 幕後指令（OOC）：直接對 AI 下指令，不影響劇情 ---------- */
 async function sendOocDirective(text) {
   const cfg = getApiSettings();
-  if (!cfg.url || !cfg.key) {
-    if (typeof appendStoryMessage === "function") appendStoryMessage("system", "［幕後］尚未設定 API，無法使用幕後指令。");
+  if (!cfg.url) {
+    if (typeof appendStoryMessage === "function") appendStoryMessage("system", "［幕後］尚未設定 API URL，無法使用幕後指令。");
     return;
   }
   const url = normalizeApiUrl(cfg.url);
@@ -611,10 +631,10 @@ async function sendOocDirective(text) {
 /* ---------- 連線測試 ---------- */
 async function testApiConnection() {
   const cfg = getApiSettings();
-  if (!cfg.url || !cfg.key) return { ok: false, msg: "請先填妥 API Key 與 URL。" };
+  if (!cfg.url) return { ok: false, msg: "請先填妥 API URL。" };
   const url = normalizeApiUrl(cfg.url);
   try {
-    const res = await sendChat(url, cfg, [{ role: "user", content: "ping" }], 1);
+    const res = await sendChat(url, cfg, [{ role: "user", content: "ping" }]);
     if (res.ok) return { ok: true, msg: "連線成功，夜路已通（" + url + "）。" };
 
     const txt = await res.text();

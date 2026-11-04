@@ -35,6 +35,7 @@ function init() {
       ];
       S.started = true;
     }
+    if (typeof refreshJobs === "function" && (!S.jobs || !S.jobs.length)) refreshJobs();
     bindEvents();
     renderAll();
     if (typeof maybePromptDayMode === "function") maybePromptDayMode();
@@ -93,6 +94,7 @@ function handleSendAction() {
   field.value = "";
 
   if (handlePsCommand(text)) return;
+  if (handleOocCommand(text)) return;
 
   appendStoryMessage("player", text);
   proceed(text);
@@ -144,6 +146,17 @@ function handlePsCommand(text) {
   const idxs = list.map((d, i) => `${i + 1}. ${d}`).join("\n");
   appendStoryMessage("system", `［指令］已加入長期指令（共 ${list.length} 條）：\n${idxs}`);
   now(`已加入長期指令（共 ${list.length} 條）`);
+  return true;
+}
+
+/* 幕後指令：直接對 AI 下指令，不影響劇情、不推進時間 */
+function handleOocCommand(text) {
+  let body = text.replace(/^\s*(\/ai|ai[:：]|幕後[:：]|ooc[:：])\s*/i, "");
+  if (body === text) return false;
+  body = body.trim();
+  if (!body) { appendStoryMessage("system", "［幕後］請在 ai: 後面寫下你想對 AI 說的幕後指令。"); return true; }
+  if (typeof sendOocDirective === "function") sendOocDirective(body);
+  else appendStoryMessage("system", "［幕後］功能不可用。");
   return true;
 }
 
@@ -249,7 +262,7 @@ function toggleDistrict(id) {
 function openExportSave() {
   const code = exportSave();
   document.getElementById("savecode-title").textContent = "匯出存檔";
-  document.getElementById("savecode-hint").textContent = "複製下面這段碼保存。更新失敗重裝後，用「匯入存檔」貼回即可還原進度。";
+  document.getElementById("savecode-hint").textContent = "複製下面這段碼保存。更新失敗重裝後，用「匯入存檔」貼回即可還原進度（含自訂人設與 API 設定）。";
   document.getElementById("savecode-text").value = code;
   const btn = document.getElementById("savecode-action");
   btn.textContent = "關閉";
@@ -304,6 +317,7 @@ function doResetGame() {
     "先踱到緋夜舊城的街頭，聽聽今晚的風聲。"
   ];
   S.started = true;
+  if (typeof refreshJobs === "function") refreshJobs();
   renderAll();
   switchTab("story");
   showToast("已重新開始。");

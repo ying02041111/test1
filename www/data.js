@@ -27,13 +27,13 @@ const STAT_GUIDE = [
     up: ["魅惑類道具：魅惑濃縮原液、舊城迷香", "情慾沉淪式的親密互動、挑逗撩撥"],
     down: ["太粗糙、太暴力的對待", "長期冷落"] },
   { key: "stamina", name: "體能", color: "#8FC7B8",
-    up: ["體能訓練", "餵食補品（蜜餞、花草茶、蜜糖糕）", "充足休息", "深淵精氣玉液"],
+    up: ["體能訓練（整套做完才結算）", "餵食補品（蜜餞、花草茶、蜜糖糕）", "充足休息", "深淵精氣玉液"],
     down: ["過度調教", "挨餓", "每日自然消退"] },
   { key: "stress", name: "壓力", color: "#D89A6A",
     up: ["施虐、束縛、強硬命令", "長時間飢餓"],
     down: ["安神香、花草茶、撫慰", "溫柔對話", "吃飽、休息"] },
   { key: "hunger", name: "飢餓", color: "#B08A6A",
-    up: ["隨時間與時段推進自然上升（每時段 +5）"],
+    up: ["隨時間與時段推進自然上升（每時段 +7）"],
     down: ["餵食對應種族食物直接歸零", "吃一般點心（減少 15~30）"] }
 ];
 
@@ -176,12 +176,16 @@ const MALE_NAMES = [
   "賽爾", "洛恩", "緋夜", "亞斯", "伊昂", "雷恩", "緋梟", "修", "諾瓦", "希歐", "緋嵐", "凜"
 ];
 
-/* 打工列表（體力消耗與金幣報酬各不相同） */
+/* 打工列表（按街區分類，金額已調低；每 3 天由系統抽換一批） */
 const JOBS = [
-  { id: "delivery", name: "舊城報館配送", hpCost: 15, goldEarn: 45, expGain: 5, desc: "騎著單車在石板路與巷弄間發放新聞與報紙。" },
-  { id: "bar_clean", name: "燈紅街酒館打掃", hpCost: 20, goldEarn: 65, expGain: 8, desc: "清掃酒吧的霓虹燈管與地板，收拾客人留下的酒杯。" },
-  { id: "tower_porter", name: "高塔器械搬運", hpCost: 35, goldEarn: 120, expGain: 15, desc: "搬運沉重的蒸氣顯像鏡與大型機具至高塔貴族的宅邸。" },
-  { id: "market_clerk", name: "蒸氣機具行售貨助手", hpCost: 10, goldEarn: 35, expGain: 4, desc: "向顧客展示新到貨的蒸氣顯像鏡與蒸氣除塵機。" }
+  { id: "delivery",     district: "oldtown",  name: "舊城報館配送",     hpCost: 12, goldEarn: 18, expGain: 5, desc: "騎著單車在石板路與巷弄間發放新聞與報紙。" },
+  { id: "old_errand",   district: "oldtown",  name: "替雜貨舖跑腿",     hpCost: 8,  goldEarn: 12, expGain: 3, desc: "幫街角雜貨舖把貨送到各家門口，順手收幾筆賒帳。" },
+  { id: "bar_clean",    district: "lantern",  name: "燈紅街酒館打掃",   hpCost: 15, goldEarn: 24, expGain: 7, desc: "清掃酒吧的霓虹燈管與地板，收拾客人留下的酒杯。" },
+  { id: "lantern_usher",district: "lantern",  name: "紅簾會館引客",     hpCost: 10, goldEarn: 16, expGain: 4, desc: "在紅簾會館門前引客，記下貴客的姓名與喜惡。" },
+  { id: "tower_porter", district: "tower",    name: "高塔器械搬運",     hpCost: 20, goldEarn: 28, expGain: 10, desc: "搬運沉重的蒸氣顯像鏡與大型機具至高塔貴族的宅邸。" },
+  { id: "tower_copy",   district: "tower",    name: "塔間書閣抄錄",     hpCost: 10, goldEarn: 15, expGain: 6, desc: "替高塔書閣抄錄泛黃的典籍，墨香沾了滿手。" },
+  { id: "outskirt_wood",district: "outskirt", name: "黑森林拾柴",       hpCost: 18, goldEarn: 20, expGain: 6, desc: "到黑森林邊緣拾撿柴火與藥草，濃霧裡得留神。" },
+  { id: "outskirt_farm",district: "outskirt", name: "莊園雜務幫手",     hpCost: 16, goldEarn: 26, expGain: 8, desc: "替郊外莊園打掃馬廄、餵養牲口。" }
 ];
 
 const ITEMS = [

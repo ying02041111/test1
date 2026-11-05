@@ -60,6 +60,14 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Generate App Icons（有 resources/icon.png 才生成）
+        run: |
+          if [ -f "resources/icon.png" ]; then
+            npx --yes @capacitor/assets generate --android --icon-only
+          else
+            echo "未找到 resources/icon.png，略過圖標生成（沿用預設圖標）。"
+          fi
+
       - name: Build APK
         run: |
           cd android

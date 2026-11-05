@@ -977,6 +977,29 @@ function lzwDecompress(b64) {
   }
   return out;
 }
+/* gzip 壓縮（縮短存檔碼，瀏覽器原生） */
+async function gzipCompress(str) {
+  const bytes = new TextEncoder().encode(str);
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+  const buf = await new Response(stream).arrayBuffer();
+  const u8 = new Uint8Array(buf);
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+async function gzipDecompress(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const buf = await new Response(stream).arrayBuffer();
+  return new TextDecoder().decode(buf);
+}
+
 
 function applyLoadedState(parsed) {
   const base = defaultState();
@@ -1037,42 +1060,48 @@ function loadGame() {
 }
 
 /* 匯出存檔：LZW 壓縮（前綴 C），過大則退回 base64（前綴 P），同時打包 API 設定＋長期指令 */
-function exportSave() {
+async function exportSave() {
   try {
     let api = null, dirs = null;
     if (typeof getApiSettings === "function") api = getApiSettings();
     if (typeof getDirectives === "function") dirs = getDirectives();
-    const bundle = { v: 2, state: S, api: api, directives: dirs };
+    const bundle = { v: 3, state: S, api: api, directives: dirs };
     const json = JSON.stringify(bundle);
-    if (json.length > 60000) {
-      return "P" + btoa(unescape(encodeURIComponent(json)));
-    }
+
+    try {
+      if (typeof CompressionStream === "function" && typeof TextEncoder === "function") {
+        return "G" + await gzipCompress(json);
+      }
+    } catch (e) {}
+
     try {
       return "C" + lzwCompress(json);
-    } catch (e) {
-      return "P" + btoa(unescape(encodeURIComponent(json)));
-    }
+    } catch (e) {}
+
+    return "P" + btoa(unescape(encodeURIComponent(json)));
   } catch (e) { return ""; }
 }
 
-function importSave(code) {
+async function importSave(code) {
   try {
     const raw = String(code == null ? "" : code).trim();
+    const prefix = raw.charAt(0);
     let bundle = null;
 
-    if (raw.charAt(0) === "C") {
-      const dec = lzwDecompress(raw.slice(1));
-      if (!dec) return false;
-      bundle = JSON.parse(dec);
-    } else {
-      let s = raw;
-      if (raw.charAt(0) === "P") s = raw.slice(1);
+    if (prefix === "G") {
+      try { bundle = JSON.parse(await gzipDecompress(raw.slice(1))); } catch (e) { bundle = null; }
+    } else if (prefix === "C") {
       try {
-        const decoded = decodeURIComponent(escape(atob(s.replace(/\s+/g, ""))));
-        bundle = JSON.parse(decoded);
-      } catch (e) {
-        bundle = null;
-      }
+        const dec = lzwDecompress(raw.slice(1));
+        bundle = dec ? JSON.parse(dec) : null;
+      } catch (e) { bundle = null; }
+    }
+
+    if (!bundle) {
+      let s = (prefix === "P") ? raw.slice(1) : raw;
+      try {
+        bundle = JSON.parse(decodeURIComponent(escape(atob(s.replace(/\s+/g, "")))));
+      } catch (e) { bundle = null; }
       if (!bundle) { try { bundle = JSON.parse(raw); } catch (e) { bundle = null; } }
     }
 
@@ -1091,6 +1120,7 @@ function importSave(code) {
     return true;
   } catch (e) { return false; }
 }
+
 
 function resetGame() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}

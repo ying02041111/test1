@@ -42,6 +42,12 @@ function aiDiag(msg) {
   } catch (_) {}
 }
 
+/* 幕後指令記憶（ai: 下達後持續生效） */
+function getOocDirectives() {
+  if (!S.oocDirectives || !Array.isArray(S.oocDirectives)) S.oocDirectives = [];
+  return S.oocDirectives;
+}
+
 function getOpenCodeSessionId() {
   try {
     let id = localStorage.getItem("opencode_session_id");
@@ -59,7 +65,6 @@ async function sendChat(url, cfg, messages, maxTokens) {
   const headers = { "Content-Type": "application/json" };
   if (cfg.key) headers["Authorization"] = "Bearer " + cfg.key;
 
-  // opencode 要求：自訂 User-Agent 與 session 識別碼
   headers["x-opencode-session"] = getOpenCodeSessionId();
   try { headers["User-Agent"] = "crimson-night-record/1.0"; } catch (e) {}
 
@@ -156,7 +161,7 @@ async function compressStory() {
   if (!h.length && !existing) { if (typeof showToast === "function") showToast("目前沒有可壓縮的劇情。"); return; }
 
   const historyText = h.map((e, i) => `${i + 1}. 玩家：「${e.u}」 敘事：「${e.a}」`).join("\n");
-  const prompt = `請把下面這款文字遊戲的「前情」濃縮成一段 200 字以內的繁體中文摘要。只保留對後續劇情重要的內容：主要角色的名字與外貌特徵、性別、彼此關係與好感、當前正在進行的姿勢或動作、已發生的重要事件、主人的身分與人設。不要新增劇情，不要下結論，只輸出摘要文字。\n${existing ? "【既有摘要】" + existing + "\n" : ""}${historyText}`;
+  const prompt = `請把下面這款文字遊戲的「前情」濃縮成一段 200 字以內的繁體中文摘要。只保留對後續劇情重要的內容：主要角色的名字與外貌特徵、性別、彼此關係與好感、當前正在進行的姿勢或動作、已發生的重要事件、主人的身分與人設，以及「西式蒸氣朋克的語感與說話方式」。不要新增劇情，不要下結論，只輸出摘要文字。\n${existing ? "【既有摘要】" + existing + "\n" : ""}${historyText}`;
 
   let summary = "";
   const cfg = getApiSettings();
@@ -164,7 +169,7 @@ async function compressStory() {
     try {
       const url = normalizeApiUrl(cfg.url);
       const res = await sendChat(url, cfg, [
-        { role: "system", content: "你是文字遊戲的劇情摘要助手，只輸出摘要文字，不要 JSON、不要解釋。" },
+        { role: "system", content: "你是文字遊戲的劇情摘要助手，只輸出摘要文字，不要 JSON、不要解釋，務必保留西式蒸氣朋克的語感。" },
         { role: "user", content: prompt }
       ], 600);
       if (res.ok) {
@@ -231,6 +236,9 @@ function buildSystemPrompt() {
 
   const dirs = getDirectives();
   const directiveText = dirs.length ? dirs.map((d, i) => `${i + 1}. ${d}`).join("\n") : "（無）";
+  const oocDirectiveText = getOocDirectives().length
+    ? getOocDirectives().map((d, i) => `${i + 1}. ${d}`).join("\n")
+    : "（無）";
   const factsText = (S.facts && S.facts.length) ? "\n【玩家已知事實】" + S.facts.join("；") : "";
   const historyText = buildHistoryText();
   const recentChoicesText = buildRecentChoicesText();
@@ -291,6 +299,13 @@ function buildSystemPrompt() {
 - 多寫「生理反應」：呼吸紊亂、體溫與顫抖、皮膚泛紅或起雞皮疙瘩、眼淚與汗、肌肉緊繃與發軟、吞嚥與喉音、指尖蜷曲、腰腹收縮、濕潤發燙等。
 - 「環境」與「氣味」的描寫要節制，不要每回都提。
 - 嚴禁「同一個詞／同一句」連續重複。
+
+【語言風格（西式蒸氣朋克，務必貫徹到底）】
+- 這是西方架空奇幻＋蒸氣朋克的世界，不是中國古代，也不是現代都市。
+- 敘事與對白都要維持「西式」語感：西洋人名、地名、稱謂；場景與物件多用「黃銅、齒輪、蒸氣、煤油燈、懷錶、燕尾服、蕾絲、馬甲、雪茄、威士忌、鐘塔、石板路」等。
+- 嚴禁中式表達：不要用中式成語、武俠／古風腔、宮廷敬語、現代網路用語（如「躺平、內卷、真香、刷屏」）。
+- 對白要有翻譯文學的味道：句子西式、節奏西洋，不要像古裝劇台詞，也不要像現代簡訊。
+- 角色的敬稱、語氣、感嘆都要符合西洋奇幻（如「我的主人」「看在老天的份上」「該死的」這類西式口吻）。
 
 【玩家輸入的判讀】
 - 玩家直接輸入的文字，預設是「對話」；若含括號（…），括號內是「動作」。
@@ -398,6 +413,9 @@ ${gearText}
   {"type":"time","phases":1}　{"type":"gold","amount":0}　{"type":"hp","amount":0}　{"type":"exp","amount":0}
 - 數值變動幅度宜小。使用道具時 itemId 必須在上列背包中。
 - 只要劇情演出吃飽、飽足、飲血止飢，就送 feed 指令讓飢餓歸零。
+
+【幕後指令（玩家已下達，務必持續遵守，不可再犯相同錯誤）】
+${oocDirectiveText}
 
 【長期指令（務必長期遵守）】
 ${directiveText}
@@ -538,7 +556,7 @@ async function callStoryAI(userText) {
 
   let res;
   try {
-    res = await sendChat(url, cfg, messages, 2000);
+    res = await sendChat(url, cfg, messages, 1000);
   } catch (e) {
     aiDiag("連線失敗（網路或跨域）：" + (e && e.message ? e.message : e));
     const r = mockNarrativeResponse(userText);
@@ -592,7 +610,7 @@ async function callStoryAI(userText) {
   return finishTurn(userText, r);
 }
 
-/* ---------- 幕後指令（OOC）：直接對 AI 下指令，不影響劇情 ---------- */
+/* ---------- 幕後指令（OOC）：直接對 AI 下指令，不影響劇情、但會記住 ---------- */
 async function sendOocDirective(text) {
   const cfg = getApiSettings();
   if (!cfg.url) {
@@ -613,15 +631,24 @@ async function sendOocDirective(text) {
     ], 400);
 
     let reply = "（無回覆）";
+    let ok = false;
     if (res.ok) {
       const data = await res.json();
       const choice = data && data.choices && data.choices[0];
       const msg = choice && choice.message;
       reply = (msg && (msg.content || msg.reasoning_content || "")) || reply;
+      ok = true;
     } else {
       reply = "AI 回應錯誤（" + res.status + "）。";
     }
     if (typeof appendStoryMessage === "function") appendStoryMessage("system", "［幕後］" + String(reply).trim());
+
+    if (ok) {
+      const arr = getOocDirectives();
+      arr.push(text);
+      while (arr.length > 10) arr.shift();
+      if (typeof saveGame === "function") saveGame();
+    }
   } catch (e) {
     if (typeof appendStoryMessage === "function") appendStoryMessage("system", "［幕後］連線失敗：" + (e && e.message ? e.message : e));
   }

@@ -259,8 +259,8 @@ function toggleDistrict(id) {
 }
 
 /* ---------- 存檔匯出／匯入 ---------- */
-function openExportSave() {
-  const code = exportSave();
+async function openExportSave() {
+  const code = await exportSave();
   document.getElementById("savecode-title").textContent = "匯出存檔";
   document.getElementById("savecode-hint").textContent = "複製下面這段碼保存。更新失敗重裝後，用「匯入存檔」貼回即可還原進度（含自訂人設與 API 設定）。";
   document.getElementById("savecode-text").value = code;
@@ -269,6 +269,7 @@ function openExportSave() {
   btn.onclick = () => closeModal("modal-savecode");
   openModal("modal-savecode");
 }
+
 
 function openImportSave() {
   document.getElementById("savecode-title").textContent = "匯入存檔";
@@ -280,10 +281,11 @@ function openImportSave() {
   openModal("modal-savecode");
 }
 
-function doImportSave() {
+async function doImportSave() {
   const code = document.getElementById("savecode-text").value.trim();
   if (!code) { showToast("請貼上存檔碼"); return; }
-  if (importSave(code)) {
+  const ok = await importSave(code);
+  if (ok) {
     closeModal("modal-savecode");
     renderAll();
     switchTab("story");
@@ -292,6 +294,7 @@ function doImportSave() {
     showToast("存檔碼無效。");
   }
 }
+
 
 /* ---------- 重新開始 ---------- */
 function openResetConfirm() {

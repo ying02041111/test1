@@ -100,6 +100,7 @@ function handleSendAction() {
   proceed(text);
 }
 
+
 function handleChoiceClick(text) {
   appendStoryMessage("player", text);
   proceed(text);

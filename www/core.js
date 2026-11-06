@@ -203,7 +203,6 @@ function advanceTime(phases) {
   for (let i = 0; i < phases; i++) {
     S.subPhase++;
 
-    // 每個時段推進，魅魔飢餓度自然上升
     S.succubi.forEach(s => {
       s.hunger = clamp((s.hunger || 0) + 7, 0, 100);
     });
@@ -211,7 +210,6 @@ function advanceTime(phases) {
     if (S.subPhase >= SUBPHASE_NAMES.length) {
       S.subPhase = 0;
       S.day++;
-      // 只在「真正推進到新的一天」時才結算，避免手動調回時間造成重複加錢
       if (S.day > (S.settledDay || 0)) {
         S.settledDay = S.day;
         triggerDailySettlement();
@@ -294,15 +292,15 @@ function triggerDailySettlement() {
   S.master.gold += income;
   notifyGoldChange(income, permIncome > 0 ? "產業收益（含永久契約侍奉之禮）" : "產業收益");
 
-  // 每 3 天刷新當前地區的打工列表
   if (typeof S.jobsDay !== "number") S.jobsDay = S.day;
   if (S.day - S.jobsDay >= 3 || !(S.jobs && S.jobs.length)) {
     refreshJobs();
     S.jobsDay = S.day;
   }
-  // 檢查並觸發緋紅永夜
+
   handleNightfall();
 }
+
 function handleNightfall() {
   if (!S.nextNightfallDay) {
     S.nextNightfallDay = S.day + randInt(3, 7);
@@ -322,7 +320,6 @@ function handleNightfall() {
     S.isNightfall = false;
   }
 }
-
 
 function maybePromptDayMode() {
   if (S.needDayChoice && typeof openDayModeModal === "function") openDayModeModal();
@@ -844,6 +841,18 @@ function processAICommands(cmd) {
           }
           break;
         }
+        case "fact": {
+          const t = String(c.text || "").trim();
+          if (t) {
+            if (!S.facts) S.facts = [];
+            if (!S.facts.includes(t)) {
+              S.facts.push(t);
+              while (S.facts.length > 40) S.facts.shift();
+              pushLog("system", `［記事］${t}`);
+            }
+          }
+          break;
+        }
         case "feed": {
           const suc = getSuccubus(c.succubusId) || currentSuccubus();
           if (suc) { suc.hunger = 0; pushLog("system", `［${suc.name}］飽足，飢餓歸零`); }
@@ -903,7 +912,6 @@ function processAICommands(cmd) {
     }
   }
 
-  // 跨日後改顯示早晨選項；否則採用 AI 給的選項
   if (S.needDayChoice) {
     S.currentChoices = morningChoices();
   } else if (Array.isArray(cmd.choices) && cmd.choices.length) {
@@ -915,7 +923,6 @@ function processAICommands(cmd) {
   maybePromptDayMode();
 }
 
-/* 打工：從「當前可接工作」裡找，只耗 1 個時段 */
 function currentJob(jobId) {
   const pool = (S.jobs && S.jobs.length) ? S.jobs : JOBS;
   return pool.find(j => j.id === jobId);
@@ -952,7 +959,6 @@ function pushLog(type, text) {
 
 const SAVE_KEY = "ck_save_v4";
 
-/* ---------- LZW 壓縮（縮短存檔碼） ---------- */
 function lzwCompress(str) {
   let dict = {};
   for (let i = 0; i < 256; i++) dict[String.fromCharCode(i)] = i;
@@ -1001,7 +1007,7 @@ function lzwDecompress(b64) {
   }
   return out;
 }
-/* gzip 壓縮（縮短存檔碼，瀏覽器原生） */
+
 async function gzipCompress(str) {
   const bytes = new TextEncoder().encode(str);
   const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
@@ -1023,7 +1029,6 @@ async function gzipDecompress(b64) {
   const buf = await new Response(stream).arrayBuffer();
   return new TextDecoder().decode(buf);
 }
-
 
 function applyLoadedState(parsed) {
   const base = defaultState();
@@ -1083,13 +1088,19 @@ function loadGame() {
   }
 }
 
-/* 匯出存檔：LZW 壓縮（前綴 C），過大則退回 base64（前綴 P），同時打包 API 設定＋長期指令 */
 async function exportSave() {
   try {
     let api = null, dirs = null;
     if (typeof getApiSettings === "function") api = getApiSettings();
     if (typeof getDirectives === "function") dirs = getDirectives();
-    const bundle = { v: 3, state: S, api: api, directives: dirs };
+
+    const copy = JSON.parse(JSON.stringify(S));
+    if (Array.isArray(copy.logs) && copy.logs.length > 20) {
+      copy.logs = copy.logs.slice(-20);
+    }
+    copy.lastUsage = null;
+
+    const bundle = { v: 3, state: copy, api: api, directives: dirs };
     const json = JSON.stringify(bundle);
 
     try {
@@ -1144,7 +1155,6 @@ async function importSave(code) {
     return true;
   } catch (e) { return false; }
 }
-
 
 function resetGame() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}

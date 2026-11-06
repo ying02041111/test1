@@ -161,7 +161,7 @@ async function compressStory() {
   if (!h.length && !existing) { if (typeof showToast === "function") showToast("目前沒有可壓縮的劇情。"); return; }
 
   const historyText = h.map((e, i) => `${i + 1}. 玩家：「${e.u}」 敘事：「${e.a}」`).join("\n");
-  const prompt = `請把下面這款文字遊戲的「前情」濃縮成一段 200 字以內的繁體中文摘要。只保留對後續劇情重要的內容：主要角色的名字與外貌特徵、性別、彼此關係與好感、當前正在進行的姿勢或動作、已發生的重要事件、主人的身分與人設，以及「西式蒸氣朋克的語感與說話方式」。不要新增劇情，不要下結論，只輸出摘要文字。\n${existing ? "【既有摘要】" + existing + "\n" : ""}${historyText}`;
+  const prompt = `請把下面這款文字遊戲的「前情」濃縮成一段 250 字以內的繁體中文摘要。只保留對後續劇情重要的內容：主要角色的名字與外貌特徵、性別、彼此關係與好感、當前正在進行的姿勢或動作、已發生的重要事件（含教過的規矩／技能、買過的重要物品、角色關係變化、重大承諾）、主人的身分與人設，以及「西式蒸氣朋克的語感與說話方式」。不要新增劇情，不要下結論，只輸出摘要文字。\n${existing ? "【既有摘要】" + existing + "\n" : ""}${historyText}`;
 
   let summary = "";
   const cfg = getApiSettings();
@@ -229,6 +229,7 @@ function buildSystemPrompt() {
   const jobsText = (S.jobs && S.jobs.length)
     ? S.jobs.map(j => `「${j.name}」—報酬 ${j.goldEarn} 金、耗體 ${j.hpCost}、歷練 ${j.expGain}`).join("；")
     : "（目前暫無可接工作）";
+
   const nightfallLine = S.isNightfall
     ? "⚠️ 今天是「緋紅永夜」！天空一片血紅、晝夜不分。"
     : "今天是尋常的晝夜。";
@@ -297,6 +298,13 @@ ${nightfallLine}
 - 場景要有進退：不要一句話就跳到無關的新場景。
 - 承接前情回顧中最後一則敘事的姿勢與動作，除非玩家輸入明確改變它。
 
+【長期記憶（重要，務必遵守）】
+- 當發生「值得長期記住」的事時，例如：教了他某個站姿／規矩、買了某樣重要物品、角色關係的重大變化、對某人的承諾、設定的重要改變——請在 commands 送出 fact 指令記錄下來：
+  {"type":"fact","text":"緋音已學會在主人面前保持端正站姿"}
+- 這些記事會永久保存。之後即使過了多天、或經過「壓縮劇情」，你依然要記得，並在劇情中體現（他確實學會了、確實擁有那本書）。
+- fact 內容要簡短、具體（一句話）；同一件事不要重複記錄。
+- 下方「玩家已知事實」列出的，就是過去已記下的事，必須承認並持續遵守。
+
 【文風與生理描寫】
 - 感官化、文學化、露骨暗示但不粗俗，不寫直白的生殖器名詞。
 - 以第二人稱「你」展開。對白標註說話者與語氣：名字：（語氣）「對白」。
@@ -323,7 +331,6 @@ ${succText}
 - 食性會影響行為：純血渴求你的體液、狐魅嗜甜討食、夢魘需你陪睡。餵食時依食性來演。
 - 等級（S~F）反映身價與歷練：越高越從容，越低越生澀。
 - 若發現自己快要偏離某個角色的設定，立刻拉回，以上方角色資料為唯一準則。
-
 
 【性格三分（影響服從與反抗，極重要）】
 - 順從型（溫順、依賴、羞怯、柔順）：服從增長快、幾乎不主動反抗，好感易升，壓力消退快。
@@ -418,6 +425,7 @@ ${gearText}
   {"type":"feed","succubusId":"..."}　（吃飽了 → 飢餓歸零）
   {"type":"presence","succubusId":"...","present":true/false,"place":"..."}
   {"type":"time","phases":1}　{"type":"gold","amount":0}　{"type":"hp","amount":0}　{"type":"exp","amount":0}
+  {"type":"fact","text":"..."}　（記錄值得長期記住的事實）
 - 數值變動幅度宜小。使用道具時 itemId 必須在上列背包中。
 - 只要劇情演出吃飽、飽足、飲血止飢，就送 feed 指令讓飢餓歸零。
 
@@ -629,7 +637,6 @@ async function sendOocDirective(text) {
   const names = S.succubi.map(s => `${s.name}（${s.gender}·${s.raceName}）`).join("、") || "無";
   const brief = `當前：第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]}，主人階級 ${getRank(S.master.rank).name}，名下魅魔：${names}。`;
 
-  // 帶上之前已保存的幕後指令，讓 AI 記得過去的調整
   const prev = getOocDirectives();
   const prevText = prev.length
     ? "\n\n【你先前已接受的幕後指令（過去的調整紀錄，務必記得）】\n" + prev.map((d, i) => `${i + 1}. ${d}`).join("\n")
@@ -667,9 +674,6 @@ async function sendOocDirective(text) {
   }
 }
 
-
-  
-    
 /* ---------- 連線測試 ---------- */
 async function testApiConnection() {
   const cfg = getApiSettings();

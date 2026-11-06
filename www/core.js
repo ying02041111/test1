@@ -31,6 +31,8 @@ function defaultState() {
     unlockedCodex: [],
     jobs: [],
     jobsDay: 0,
+    nextNightfallDay: 0,
+    isNightfall: false,
     lastUsage: null,
     market: { type: null, candidates: [], selectedId: null, cache: {} },
     sellState: null,
@@ -298,7 +300,29 @@ function triggerDailySettlement() {
     refreshJobs();
     S.jobsDay = S.day;
   }
+  // 檢查並觸發緋紅永夜
+  handleNightfall();
 }
+function handleNightfall() {
+  if (!S.nextNightfallDay) {
+    S.nextNightfallDay = S.day + randInt(3, 7);
+    S.isNightfall = false;
+    return;
+  }
+  if (S.day >= S.nextNightfallDay) {
+    S.isNightfall = true;
+    S.nextNightfallDay = S.day + randInt(3, 7);
+    S.succubi.forEach(s => {
+      s.charm = clampStatObj(s, "charm", (s.charm || 0) + 6);
+      s.hunger = clamp((s.hunger || 0) + 10, 0, 100);
+      s.obedience = clampStatObj(s, "obedience", (s.obedience || 0) - 5);
+    });
+    pushLog("system", "緋紅永夜降臨——天空染成一片血紅，晝夜不分。你名下的魅魔血脈躁動、淫紋自行甦醒。");
+  } else {
+    S.isNightfall = false;
+  }
+}
+
 
 function maybePromptDayMode() {
   if (S.needDayChoice && typeof openDayModeModal === "function") openDayModeModal();

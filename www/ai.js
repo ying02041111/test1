@@ -629,12 +629,18 @@ async function sendOocDirective(text) {
   const names = S.succubi.map(s => `${s.name}（${s.gender}·${s.raceName}）`).join("、") || "無";
   const brief = `當前：第 ${S.day} 日 · ${SUBPHASE_NAMES[S.subPhase]}，主人階級 ${getRank(S.master.rank).name}，名下魅魔：${names}。`;
 
+  // 帶上之前已保存的幕後指令，讓 AI 記得過去的調整
+  const prev = getOocDirectives();
+  const prevText = prev.length
+    ? "\n\n【你先前已接受的幕後指令（過去的調整紀錄，務必記得）】\n" + prev.map((d, i) => `${i + 1}. ${d}`).join("\n")
+    : "";
+
   const sys = "你是《緋夜飼育錄》的幕後助手。玩家想在劇情之外對你下指令（例如調整世界觀、角色的設定或你往後的行為方式），這不會當作遊戲內的劇情。請簡短回覆：確認你已理解並會照辦，或若指令不清楚就提出問題。只回覆純文字，不要 JSON，不要新增遊戲劇情。";
 
   try {
     const res = await sendChat(url, cfg, [
       { role: "system", content: sys },
-      { role: "user", content: brief + "\n幕後指令：" + text }
+      { role: "user", content: brief + prevText + "\n幕後指令：" + text }
     ], 400);
 
     let reply = "（無回覆）";
@@ -661,6 +667,9 @@ async function sendOocDirective(text) {
   }
 }
 
+
+  
+    
 /* ---------- 連線測試 ---------- */
 async function testApiConnection() {
   const cfg = getApiSettings();

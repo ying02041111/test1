@@ -571,7 +571,7 @@ async function callStoryAI(userText) {
 
   let res;
   try {
-    res = await sendChat(url, cfg, messages, 1000);
+    res = await sendChat(url, cfg, messages, 2000);
   } catch (e) {
     aiDiag("連線失敗（網路或跨域）：" + (e && e.message ? e.message : e));
     const r = mockNarrativeResponse(userText);
